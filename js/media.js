@@ -127,18 +127,28 @@ export async function loadAsset(file, id = uid('asset')) {
   }
 }
 
-function waveformUrl(buffer) {
-  const w = 360;
-  const h = 48;
+function drawWave(peaks) {
+  const w = peaks.length;
+  const h = 64;
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext('2d');
+  const mid = h / 2;
+  ctx.fillStyle = '#bbf7d0';
+  for (let i = 0; i < w; i++) {
+    const amp = Math.max(1, Math.abs(peaks[i].max - peaks[i].min) * mid);
+    ctx.fillRect(i, mid - amp / 2, 1, amp);
+  }
+  return canvas.toDataURL('image/png');
+}
+
+function waveformFromBuffer(buffer) {
+  const w = 480;
   const data = buffer.getChannelData(0);
   const step = Math.max(1, Math.floor(data.length / w));
-  const hop = Math.max(1, Math.ceil(step / 24));
-  const mid = h / 2;
-  ctx.fillStyle = '#10b981';
+  const hop = Math.max(1, Math.floor(step / 32));
+  const peaks = [];
   for (let i = 0; i < w; i++) {
     let min = 1;
     let max = -1;
@@ -148,11 +158,81 @@ function waveformUrl(buffer) {
       if (v < min) min = v;
       if (v > max) max = v;
     }
-    const top = mid - max * mid;
-    const bot = mid - min * mid;
-    ctx.fillRect(i, top, 1, Math.max(1, bot - top));
+    peaks.push({ min, max });
   }
-  return canvas.toDataURL('image/png');
+  return drawWave(peaks);
+}
+
+async function waveformFromElement(url, duration) {
+  if (!duration || !isFinite(duration)) return '';
+  const el = document.createElement('audio');
+  el.preload = 'auto';
+  el.src = url;
+  park(el);
+  try {
+    await waitMedia(el, 'loadeddata', 8000);
+    const ctx = audioContext();
+    await ctx.resume();
+    const src = ctx.createMediaElementSource(el);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;
+    src.connect(analyser);
+    const columns = 360;
+    const peaks = Array.from({ length: columns }, () => ({ min: 0, max: 0 }));
+    const buf = new Uint8Array(analyser.fftSize);
+    const grab = (col) => {
+      analyser.getByteTimeDomainData(buf);
+      let peak = 0;
+      for (let i = 0; i < buf.length; i += 8) {
+        const v = Math.abs(buf[i] - 128) / 128;
+        if (v > peak) peak = v;
+      }
+      if (peak > peaks[col].max) {
+        peaks[col].max = peak;
+        peaks[col].min = -peak;
+      }
+    };
+    el.preservesPitch = false;
+    el.playbackRate = 16;
+    await el.play();
+    // ponytail: if the file is longer than ~3 min, jump instead of playing it all. Real samples when decodeAudioData works.
+    if (duration <= 16 * 12) {
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, (duration / 16) * 1000 + 800);
+        const tick = () => {
+          if (el.ended || el.currentTime >= duration - 0.05) {
+            clearTimeout(timer);
+            resolve();
+            return;
+          }
+          grab(Math.min(columns - 1, Math.floor((el.currentTime / duration) * columns)));
+          requestAnimationFrame(tick);
+        };
+        tick();
+      });
+    } else {
+      const slice = duration / columns;
+      for (let i = 0; i < columns; i++) {
+        el.currentTime = i * slice;
+        await new Promise((resolve) => {
+          const done = () => { el.removeEventListener('seeked', done); clearTimeout(timer); resolve(); };
+          const timer = setTimeout(done, 40);
+          el.addEventListener('seeked', done);
+        });
+        await new Promise(r => setTimeout(r, 16));
+        grab(i);
+      }
+    }
+    try { el.pause(); } catch { /* already ended */ }
+    src.disconnect();
+    return drawWave(peaks);
+  } catch {
+    return '';
+  } finally {
+    el.removeAttribute('src');
+    el.load();
+    el.remove();
+  }
 }
 
 async function decodeAudio(asset) {
@@ -161,7 +241,7 @@ async function decodeAudio(asset) {
   try {
     const copy = (await asset.file.arrayBuffer()).slice(0);
     asset.audioBuffer = await ctx.decodeAudioData(copy);
-    asset.waveform = waveformUrl(asset.audioBuffer);
+    asset.waveform = waveformFromBuffer(asset.audioBuffer);
     if (asset.type === 'audio' && !asset.duration) asset.duration = asset.audioBuffer.duration;
   } catch {
     asset.audioBuffer = null;
@@ -170,6 +250,7 @@ async function decodeAudio(asset) {
     el.src = asset.url;
     asset.audioEl = el;
     park(el);
+    asset.waveform = await waveformFromElement(asset.url, asset.duration);
   }
 }
 

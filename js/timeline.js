@@ -290,24 +290,24 @@ function buildClip(clip) {
   el.className = `absolute top-1 bottom-1 rounded border overflow-hidden cursor-pointer flex flex-col shadow-md ${selected ? 'border-cyan-400 ring-2 ring-cyan-400/50 z-20' : 'border-slate-700 hover:border-slate-500 z-10'}`;
   el.style.left = `${clip.startTime * state.zoom}px`;
   el.style.width = `${Math.max(4, clip.duration * state.zoom)}px`;
-  el.style.backgroundColor = BAR[clip.type] || clip.color || BAR.video;
+  el.style.backgroundColor = clip.type === 'audio' ? '#022c22' : (BAR[clip.type] || clip.color || BAR.video);
 
   const asset = assetById(clip.assetId);
   const bg = document.createElement('div');
-  bg.className = 'absolute inset-0 flex pointer-events-none bg-black/20';
-  if (asset?.type === 'audio' && asset.waveform) {
+  bg.className = 'absolute inset-0 flex pointer-events-none';
+  if (clip.type === 'audio' && asset?.waveform) {
     const img = document.createElement('img');
     img.src = asset.waveform;
     img.alt = '';
-    img.className = 'w-full h-full object-fill opacity-80';
+    img.className = 'w-full h-full object-fill';
     bg.appendChild(img);
-  } else if (asset?.type === 'image' && asset.url) {
+  } else if (clip.type !== 'audio' && asset?.type === 'image' && asset.url) {
     const img = document.createElement('img');
     img.src = asset.url;
     img.alt = '';
     img.className = 'w-full h-full object-contain';
     bg.appendChild(img);
-  } else if (asset?.thumbnails?.length) {
+  } else if (clip.type !== 'audio' && asset?.thumbnails?.length) {
     for (const src of asset.thumbnails) {
       const img = document.createElement('img');
       img.src = src;
