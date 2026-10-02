@@ -297,6 +297,8 @@ export function setZoom(value) {
   ensureSpan();
   renderTimeline();
   if (el) el.scrollLeft = Math.max(0, state.currentTime * state.zoom - anchor);
+  renderRuler();
+  refreshFilmstrips();
   const slider = document.getElementById('zoom-slider');
   if (slider && document.activeElement !== slider) slider.value = zoomToSlider(state.zoom);
 }
@@ -310,31 +312,77 @@ export function zoomToFit() {
 }
 
 function rulerStep() {
-  if (state.zoom >= 40) return 1;
-  if (state.zoom >= 20) return 2;
-  if (state.zoom >= 10) return 5;
-  return 10;
+  const fps = Math.max(1, state.fps || 30);
+  const minPx = 40;
+  const steps = [1, 2, 5, 10, 15].map(frames => ({ frames, sec: frames / fps }));
+  for (const sec of [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600]) steps.push({ frames: 0, sec });
+  for (const step of steps) {
+    if (step.sec * state.zoom >= minPx) return step;
+  }
+  return steps[steps.length - 1];
 }
 
-function rulerLabel(sec) {
-  if (sec < 60) return `${sec}s`;
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return `${m}:${String(s).padStart(2, '0')}`;
+function rulerLabel(t, step) {
+  const fps = Math.max(1, state.fps || 30);
+  const whole = Math.max(0, Math.floor(t + 1e-4));
+  if (step.frames) {
+    const frame = Math.min(fps - 1, Math.max(0, Math.round((t - whole) * fps)));
+    const ff = String(frame).padStart(2, '0');
+    const ss = String(whole % 60).padStart(2, '0');
+    const mm = Math.floor(whole / 60);
+    return mm ? `${mm}:${ss}:${ff}` : `${whole}:${ff}`;
+  }
+  if (step.sec < 1) {
+    const rounded = Math.round(t * 10) / 10;
+    if (rounded < 60) return rounded.toFixed(1);
+    const m = Math.floor(rounded / 60);
+    const s = (rounded - m * 60).toFixed(1).padStart(4, '0');
+    return `${m}:${s}`;
+  }
+  if (whole < 60) return `${whole}s`;
+  const m = Math.floor(whole / 60);
+  return `${m}:${String(whole % 60).padStart(2, '0')}`;
 }
 
-function renderRuler(widthPx) {
+function renderRuler() {
   const ruler = document.getElementById('timeline-ruler');
+  if (!ruler) return;
+  const widthPx = Math.max(1, Math.ceil(state.span * state.zoom));
   ruler.style.width = `${widthPx}px`;
-  ruler.replaceChildren();
   const step = rulerStep();
-  const total = Math.ceil(state.span);
-  for (let s = 0; s <= total; s += step) {
+  const fps = Math.max(1, state.fps || 30);
+  const scroller = document.getElementById('timeline-scroll-container');
+  const viewLeft = scroller?.scrollLeft || 0;
+  const viewW = scroller?.clientWidth || 800;
+  const t0 = Math.max(0, (viewLeft - viewW) / state.zoom);
+  const t1 = Math.min(state.span, (viewLeft + viewW * 2) / state.zoom);
+  const i0 = Math.max(0, Math.floor(t0 / step.sec));
+  const i1 = Math.ceil(t1 / step.sec);
+  const parts = [5, 4, 2].find(n => (step.sec / n) * state.zoom >= 8) || 1;
+  const key = `${widthPx}|${step.sec}|${fps}|${i0}|${i1}|${parts}`;
+  if (ruler.dataset.key === key) return;
+  ruler.dataset.key = key;
+  ruler.replaceChildren();
+  const add = (t, className, text) => {
     const mark = document.createElement('div');
-    mark.className = 'absolute top-0 bottom-0 timeline-ruler-tick text-[9px] font-mono text-slate-400 pl-1 no-select pointer-events-none';
-    mark.style.left = `${s * state.zoom}px`;
-    mark.textContent = rulerLabel(s);
+    mark.className = className;
+    mark.style.left = `${t * state.zoom}px`;
+    if (text) mark.textContent = text;
     ruler.appendChild(mark);
+  };
+  const labeled = 'absolute top-0 bottom-0 timeline-ruler-tick text-[10px] font-mono pl-1 no-select pointer-events-none';
+  const minor = 'absolute bottom-0 h-2 timeline-ruler-tick minor pointer-events-none';
+  for (let i = i0; i <= i1; i++) {
+    const t = step.frames ? (i * step.frames) / fps : i * step.sec;
+    if (t > state.span + 1e-4) break;
+    const frame = step.frames ? Math.round((t - Math.floor(t + 1e-4)) * fps) : 0;
+    const atSecond = step.frames ? frame === 0 : step.sec < 1 && Math.abs(t - Math.round(t)) < 1e-4;
+    add(t, `${labeled}${atSecond ? ' sec' : ''}`, rulerLabel(t, step));
+    for (let k = 1; k < parts; k++) {
+      const mt = t + (k * step.sec) / parts;
+      if (mt > state.span) break;
+      add(mt, minor, '');
+    }
   }
 }
 
@@ -363,30 +411,56 @@ function nearestFrame(asset, time) {
   return frames[best];
 }
 
+function filmWindow(clip, thumbW) {
+  const clipW = Math.max(4, clip.duration * state.zoom);
+  const maxIndex = Math.max(0, Math.ceil(clipW / thumbW) - 1);
+  const scroller = document.getElementById('timeline-scroll-container');
+  const viewW = scroller?.clientWidth || 0;
+  if (!viewW) return { first: 0, last: Math.min(maxIndex, 24), clipW };
+  const viewLeft = scroller.scrollLeft;
+  const clipLeft = clip.startTime * state.zoom;
+  const pad = thumbW * 3;
+  const from = Math.max(0, viewLeft - clipLeft - pad);
+  const to = Math.min(clipW, viewLeft + viewW - clipLeft + pad);
+  if (to <= from) return { first: 0, last: -1, clipW };
+  const first = Math.min(maxIndex, Math.floor(from / thumbW));
+  const last = Math.min(maxIndex, Math.max(first, Math.ceil(to / thumbW) - 1));
+  return { first, last, clipW };
+}
+
 function placeFilmstrip(bg, clip, asset) {
   const height = bg.clientHeight || 56;
   const aspect = asset.width > 0 && asset.height > 0 ? asset.width / asset.height : 16 / 9;
-  let thumbW = Math.max(16, height * aspect);
-  const clipW = Math.max(4, clip.duration * state.zoom);
-  let count = Math.max(1, Math.ceil(clipW / thumbW));
-  // ponytail: 40 nodes per clip; wider slots still cover the clip. Raise the cap for a denser strip.
-  if (count > 40) {
-    count = 40;
-    thumbW = clipW / count;
-  }
+  const thumbW = Math.max(16, height * aspect);
+  const { first, last } = filmWindow(clip, thumbW);
+  const key = `${state.zoom}|${clip.startOffset || 0}|${clip.duration}|${first}|${last}|${thumbW.toFixed(1)}`;
+  if (bg.dataset.filmKey === key) return;
+  bg.dataset.filmKey = key;
+  bg.replaceChildren();
+  if (last < first) return;
+  // ponytail: only the thumbs on screen. A whole clip at max zoom is tens of thousands of nodes.
   const slot = thumbW / state.zoom;
   const start = clip.startOffset || 0;
-  bg.replaceChildren();
-  for (let i = 0; i < count; i++) {
+  for (let i = first; i <= last; i++) {
     const src = nearestFrame(asset, start + i * slot);
     if (!src) continue;
     const img = document.createElement('img');
     img.src = src;
     img.alt = '';
     img.draggable = false;
-    img.className = 'h-full flex-none max-w-none object-cover pointer-events-none';
+    img.className = 'absolute top-0 h-full max-w-none object-cover pointer-events-none';
+    img.style.left = `${i * thumbW}px`;
     img.style.width = `${thumbW}px`;
     bg.appendChild(img);
+  }
+}
+
+function refreshFilmstrips() {
+  for (const clip of state.clips) {
+    if (clip.type === 'audio' || clip.type === 'text') continue;
+    const bg = document.querySelector(`[data-clip-id="${clip.id}"] [data-film]`);
+    const asset = assetById(clip.assetId);
+    if (bg && asset?.thumbnails?.length) placeFilmstrip(bg, clip, asset);
   }
 }
 
@@ -717,7 +791,7 @@ export function renderTimeline() {
   if (!headers || !lanes) return;
 
   const widthPx = Math.max(1, Math.ceil(state.span * state.zoom));
-  renderRuler(widthPx);
+  renderRuler();
   lanes.style.width = `${widthPx}px`;
   headers.replaceChildren();
   lanes.replaceChildren();
@@ -831,6 +905,8 @@ function onTimelineScroll() {
   const el = document.getElementById('timeline-scroll-container');
   const headers = document.getElementById('track-header-list');
   if (headers) headers.scrollTop = el.scrollTop;
+  renderRuler();
+  refreshFilmstrips();
   const remain = el.scrollWidth - el.scrollLeft - el.clientWidth;
   if (remain < 64) {
     const left = el.scrollLeft;
