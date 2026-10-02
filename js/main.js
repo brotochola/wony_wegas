@@ -121,6 +121,82 @@ function applyProject(width, height, fps) {
   state.dirty = true;
 }
 
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+function dataUrlToFile(dataUrl, name, mime) {
+  const raw = String(dataUrl || '');
+  const b64 = raw.includes(',') ? raw.split(',')[1] : raw;
+  if (!b64) throw new Error('sin medio');
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new File([bytes], name, { type: mime || '' });
+}
+
+async function saveSessionJson() {
+  try {
+    flash('Preparando el JSON…');
+    await new Promise(r => setTimeout(r, 40));
+    const media = [];
+    for (const asset of state.mediaPool) {
+      media.push({
+        id: asset.id,
+        name: asset.name,
+        mime: asset.mime,
+        dataUrl: await blobToDataUrl(asset.file)
+      });
+    }
+    const payload = {
+      version: 1,
+      name: state.projectName,
+      savedAt: Date.now(),
+      width: state.projectWidth,
+      height: state.projectHeight,
+      fps: state.fps,
+      tracks: state.tracks,
+      clips: state.clips,
+      media
+    };
+    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+    const a = document.createElement('a');
+    const safe = (state.projectName || 'sesion').replace(/[^\w\-]+/g, '_');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${safe}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    state.dirty = false;
+    flash('Sesión guardada en JSON');
+  } catch (err) {
+    console.warn(err);
+    flash('No se pudo guardar el JSON', 'error');
+  }
+}
+
+async function openSessionJson(file) {
+  try {
+    const project = JSON.parse(await file.text());
+    if (!project || !Array.isArray(project.clips)) throw new Error('formato');
+    if (state.dirty && !await ask('Hay cambios sin guardar. ¿Abrir esta sesión igual?')) return;
+    project.media = (project.media || []).map(item => ({
+      id: item.id,
+      name: item.name,
+      mime: item.mime,
+      blob: dataUrlToFile(item.dataUrl || item.data, item.name, item.mime)
+    }));
+    await restoreProject(project);
+  } catch (err) {
+    console.warn(err);
+    flash('Ese JSON no es una sesión de este editor', 'error');
+  }
+}
+
 async function saveProject() {
   try {
     const name = await askName(state.projectName || 'Proyecto');
@@ -349,6 +425,13 @@ function bindUi() {
   });
   document.getElementById('btn-save').addEventListener('click', saveProject);
   document.getElementById('btn-load').addEventListener('click', loadProject);
+  document.getElementById('btn-save-json').addEventListener('click', saveSessionJson);
+  document.getElementById('btn-open-json').addEventListener('click', () => document.getElementById('json-input').click());
+  document.getElementById('json-input').addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) openSessionJson(file);
+  });
   document.getElementById('proj-apply').addEventListener('click', () => {
     applyProject(
       document.getElementById('proj-w').value,

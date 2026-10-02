@@ -45,8 +45,14 @@ function snapMark(time, ignoreId) {
   if (!state.isSnapping) return time;
   const threshold = 8 / state.zoom;
   const marks = [0, state.currentTime];
+  const skip = new Set();
+  if (ignoreId) {
+    skip.add(ignoreId);
+    const self = state.clips.find(c => c.id === ignoreId);
+    if (self?.linkedClipId) skip.add(self.linkedClipId);
+  }
   for (const clip of state.clips) {
-    if (clip.id === ignoreId) continue;
+    if (skip.has(clip.id)) continue;
     marks.push(clip.startTime, clip.startTime + clip.duration);
   }
   let best = time;
@@ -294,14 +300,15 @@ function makeHandle(className, handle, title) {
 function buildClip(clip) {
   const el = document.createElement('div');
   const selected = state.selectedClipId === clip.id;
-  el.className = `absolute top-1 bottom-1 rounded border overflow-hidden cursor-pointer flex flex-col shadow-md ${selected ? 'border-cyan-400 ring-2 ring-cyan-400/50 z-20' : 'border-slate-700 hover:border-slate-500 z-10'}`;
+  el.dataset.clipId = clip.id;
+  el.className = `absolute top-1 bottom-1 rounded border overflow-hidden cursor-grab flex flex-col shadow-md ${selected ? 'border-cyan-400 ring-2 ring-cyan-400/50 z-20' : 'border-slate-700 hover:border-slate-500 z-10'}`;
   el.style.left = `${clip.startTime * state.zoom}px`;
   el.style.width = `${Math.max(4, clip.duration * state.zoom)}px`;
   el.style.backgroundColor = clip.type === 'audio' ? '#022c22' : (BAR[clip.type] || clip.color || BAR.video);
 
   const asset = assetById(clip.assetId);
   const bg = document.createElement('div');
-  bg.className = 'absolute inset-0 flex pointer-events-none';
+  bg.className = 'absolute inset-0 flex pointer-events-none overflow-hidden';
   if (clip.type === 'audio' && asset?.waveform) {
     const img = document.createElement('img');
     img.src = asset.waveform;
@@ -319,7 +326,8 @@ function buildClip(clip) {
       const img = document.createElement('img');
       img.src = src;
       img.alt = '';
-      img.className = 'h-full flex-1 min-w-0 object-contain';
+      img.className = 'h-full w-auto flex-none max-w-none';
+      img.style.aspectRatio = '16 / 9';
       bg.appendChild(img);
     }
   }
@@ -329,6 +337,12 @@ function buildClip(clip) {
   label.className = 'relative z-10 px-1.5 py-0.5 text-[11px] text-white truncate drop-shadow max-w-full pointer-events-none';
   label.textContent = clip.name;
   el.appendChild(label);
+  if (clip.linkedClipId) {
+    const link = document.createElement('i');
+    link.className = 'fa-solid fa-link absolute bottom-0.5 right-1 text-[9px] text-white/80 z-10 pointer-events-none';
+    link.title = 'Audio y video enlazados: se mueven juntos';
+    el.appendChild(link);
+  }
 
   const edges = overlapEdges(clip);
   const inPx = Math.max(clip.fadeIn || 0, edges.inn) * state.zoom;
@@ -392,23 +406,95 @@ function buildClip(clip) {
   return el;
 }
 
+function trackAt(clientY) {
+  const lanes = document.querySelectorAll('#track-lanes > div');
+  for (let i = 0; i < lanes.length; i++) {
+    const rect = lanes[i].getBoundingClientRect();
+    if (clientY >= rect.top && clientY <= rect.bottom) return { track: state.tracks[i], lane: lanes[i] };
+  }
+  return null;
+}
+
+function clipFits(clip, track) {
+  if (!track) return false;
+  if (clip.type === 'audio') return track.type === 'audio';
+  return track.type === 'video';
+}
+
+function laneOf(trackId) {
+  const index = state.tracks.findIndex(t => t.id === trackId);
+  return document.querySelectorAll('#track-lanes > div')[index] || null;
+}
+
+function showGhost(id, lane, time, duration, ok) {
+  const lanes = document.getElementById('track-lanes');
+  let ghost = document.getElementById(id);
+  if (!ghost) {
+    ghost = document.createElement('div');
+    ghost.id = id;
+    ghost.className = 'absolute rounded pointer-events-none';
+    lanes.appendChild(ghost);
+  }
+  ghost.classList.toggle('bad', !ok);
+  ghost.classList.remove('hidden');
+  ghost.style.left = `${Math.max(0, time) * state.zoom}px`;
+  ghost.style.width = `${Math.max(4, duration * state.zoom)}px`;
+  ghost.style.top = `${lane.offsetTop + 4}px`;
+  ghost.style.height = `${Math.max(8, lane.clientHeight - 8)}px`;
+}
+
+function hideGhosts() {
+  document.getElementById('clip-ghost')?.remove();
+  document.getElementById('clip-ghost-link')?.remove();
+}
+
 function startMove(e, clip) {
-  const originX = e.clientX;
   const origin = clip.startTime;
   const partner = partnerOf(clip);
   const partnerOrigin = partner ? partner.startTime : 0;
+  const clipEl = e.currentTarget;
+  const grab = (e.clientX - clipEl.getBoundingClientRect().left) / state.zoom;
+  clipEl.style.opacity = '0.4';
+  const partnerEl = partner ? document.querySelector(`[data-clip-id="${partner.id}"]`) : null;
+  if (partnerEl) partnerEl.style.opacity = '0.4';
+  document.body.style.cursor = 'grabbing';
+  let drop = { time: origin, track: state.tracks.find(t => t.id === clip.trackId), ok: true };
+
   const move = (ev) => {
-    const delta = (ev.clientX - originX) / state.zoom;
-    clip.startTime = snapStart(Math.max(0, origin + delta), clip.duration, clip.id);
-    if (partner) partner.startTime = Math.max(0, partnerOrigin + (clip.startTime - origin));
-    renderTimeline();
-    previewNow();
+    hideTip();
+    const scroller = document.getElementById('timeline-scroll-container');
+    const view = scroller.getBoundingClientRect();
+    if (ev.clientX > view.right - 28) scroller.scrollLeft += 16;
+    else if (ev.clientX < view.left + 28) scroller.scrollLeft -= 16;
+
+    const hit = trackAt(ev.clientY);
+    const lane = hit?.lane || laneOf(clip.trackId);
+    if (!lane) return;
+    const rect = lane.getBoundingClientRect();
+    let time = (ev.clientX - rect.left) / state.zoom - grab;
+    if (partner && partnerOrigin + (time - origin) < 0) time = origin - partnerOrigin;
+    time = Math.max(0, time);
+    time = snapStart(time, clip.duration, clip.id);
+    if (partner && partnerOrigin + (time - origin) < 0) time = Math.max(0, origin - partnerOrigin);
+    const track = hit?.track || null;
+    const ok = clipFits(clip, track);
+    drop = { time, track: ok ? track : state.tracks.find(t => t.id === clip.trackId), ok };
+    showGhost('clip-ghost', ok && hit?.lane ? hit.lane : laneOf(clip.trackId), time, clip.duration, ok);
+    if (partner) {
+      const partnerLane = laneOf(partner.trackId);
+      if (partnerLane) showGhost('clip-ghost-link', partnerLane, partnerOrigin + (time - origin), partner.duration, true);
+    }
   };
   const up = () => {
     window.removeEventListener('mousemove', move);
     window.removeEventListener('mouseup', up);
+    document.body.style.cursor = '';
     hideSnap();
     hideTip();
+    hideGhosts();
+    clip.startTime = drop.time;
+    if (drop.ok && drop.track) clip.trackId = drop.track.id;
+    if (partner) partner.startTime = Math.max(0, partnerOrigin + (clip.startTime - origin));
     pushHistory();
     renderTimeline();
     commitPlayback();

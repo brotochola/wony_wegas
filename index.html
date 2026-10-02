@@ -58,6 +58,14 @@
       <button type="button" id="btn-load" class="p-1.5 text-slate-400 hover:text-cyan-400" title="Cargar un proyecto guardado">
         <i class="fa-solid fa-folder-open text-sm"></i>
       </button>
+      <div class="h-4 w-px bg-vegas-border"></div>
+      <button type="button" id="btn-save-json" class="p-1.5 text-slate-400 hover:text-cyan-400" title="Guardar sesión como JSON">
+        <i class="fa-solid fa-file-arrow-down text-sm"></i>
+      </button>
+      <button type="button" id="btn-open-json" class="p-1.5 text-slate-400 hover:text-cyan-400" title="Abrir sesión JSON">
+        <i class="fa-solid fa-file-arrow-up text-sm"></i>
+      </button>
+      <input type="file" id="json-input" accept="application/json,.json" class="hidden">
       <button type="button" id="btn-export" class="ml-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs px-4 py-1.5 rounded flex items-center gap-1.5 shadow-lg shadow-cyan-500/20">
         <i class="fa-solid fa-film"></i>
         <span>Exportar Video...</span>
@@ -74,7 +82,7 @@
       <div id="tab-content-media" class="flex-1 flex flex-col p-2 overflow-hidden">
         <div class="flex items-center justify-between mb-2">
           <span class="text-xs text-slate-400">Archivos cargados (<span id="media-count">0</span>)</span>
-          <label class="bg-vegas-panelLight hover:bg-vegas-border border border-slate-700 text-xs text-slate-200 px-2.5 py-1 rounded cursor-pointer flex items-center gap-1">
+          <label title="Importar video, audio o imagen" class="bg-vegas-panelLight hover:bg-vegas-border border border-slate-700 text-xs text-slate-200 px-2.5 py-1 rounded cursor-pointer flex items-center gap-1">
             <i class="fa-solid fa-plus text-cyan-400"></i>
             <span>Añadir Archivo</span>
             <input type="file" id="file-input" multiple accept="video/*,audio/*,image/*" class="hidden">
@@ -115,7 +123,7 @@
           <input id="proj-h" type="number" min="2" step="2" value="1080" title="Alto" class="w-16 bg-vegas-bg border border-vegas-border rounded px-1 py-0.5 text-slate-100">
           <input id="proj-fps" type="number" min="1" max="120" value="30" title="FPS" class="w-12 bg-vegas-bg border border-vegas-border rounded px-1 py-0.5 text-slate-100">
           <span class="font-sans">fps</span>
-          <button type="button" id="proj-apply" class="ml-1 px-2 py-0.5 rounded bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-sans font-bold">Aplicar</button>
+          <button type="button" id="proj-apply" title="Aplicar ancho, alto y fps al proyecto" class="ml-1 px-2 py-0.5 rounded bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-sans font-bold">Aplicar</button>
         </div>
       </div>
       <div class="flex-1 bg-black flex items-center justify-center relative overflow-hidden p-2">
@@ -130,7 +138,7 @@
           </button>
           <button type="button" id="btn-seek-end" class="p-2 text-slate-300 hover:text-cyan-400 text-sm" title="Ir al final del último clip"><i class="fa-solid fa-forward-step"></i></button>
         </div>
-        <div class="flex items-center space-x-1 w-28">
+        <div class="flex items-center space-x-1 w-28" title="Nivel de audio de la mezcla">
           <i class="fa-solid fa-volume-high text-xs text-slate-400"></i>
           <div class="flex-1 h-2 bg-vegas-bg border border-vegas-border rounded overflow-hidden flex gap-0.5 p-0.5">
             <div id="vu-bar-l" class="h-full bg-emerald-500 w-0"></div>
@@ -184,7 +192,7 @@
               </div>
             </div>
           </div>
-          <button type="button" id="insp-use-project" class="w-full bg-vegas-border hover:bg-slate-700 text-slate-100 font-bold py-2 rounded">
+          <button type="button" id="insp-use-project" title="El proyecto pasa a tener el tamaño y los fps de este clip" class="w-full bg-vegas-border hover:bg-slate-700 text-slate-100 font-bold py-2 rounded">
             Usar tamaño y fps del clip
           </button>
           <div id="insp-audio-opts" class="space-y-3 pt-2 border-t border-vegas-border">
@@ -214,16 +222,16 @@
           <span>Eliminar</span>
         </button>
         <div class="h-4 w-px bg-vegas-border"></div>
-        <button type="button" id="btn-snap" class="bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 px-2 py-1 rounded flex items-center gap-1">
+        <button type="button" id="btn-snap" title="Imantar el clip a cortes, al cabezal y al inicio" class="bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 px-2 py-1 rounded flex items-center gap-1">
           <i class="fa-solid fa-magnet text-xs"></i>
           <span>Ajuste Magnético</span>
         </button>
       </div>
       <div class="flex items-center space-x-3">
-        <button type="button" id="btn-add-video" class="text-slate-300 hover:text-cyan-400 flex items-center gap-1">
+        <button type="button" id="btn-add-video" title="Agregar una pista de video" class="text-slate-300 hover:text-cyan-400 flex items-center gap-1">
           <i class="fa-solid fa-plus-circle text-cyan-400"></i> Pista Video
         </button>
-        <button type="button" id="btn-add-audio" class="text-slate-300 hover:text-emerald-400 flex items-center gap-1">
+        <button type="button" id="btn-add-audio" title="Agregar una pista de audio" class="text-slate-300 hover:text-emerald-400 flex items-center gap-1">
           <i class="fa-solid fa-plus-circle text-emerald-400"></i> Pista Audio
         </button>
         <div class="h-4 w-px bg-vegas-border"></div>
