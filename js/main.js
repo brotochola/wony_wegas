@@ -757,8 +757,13 @@ function onKeyDown(e) {
   else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
     e.preventDefault();
     const dir = e.key === 'ArrowRight' ? 1 : -1;
-    const step = e.altKey ? 1 / (state.fps || 30) : 1 / state.zoom;
-    seek(state.currentTime + dir * step);
+    const fps = Math.max(1, state.fps || 30);
+    const frame = 1 / fps;
+    const quantum = e.altKey ? frame : Math.max(frame, 1 / state.zoom);
+    const frames = Math.max(1, Math.round(quantum / frame));
+    const index = state.currentTime * fps;
+    const next = dir > 0 ? Math.floor(index + 1e-4) + frames : Math.ceil(index - 1e-4) - frames;
+    seek(Math.max(0, next / fps));
   } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
     e.preventDefault();
     if (e.altKey && e.key === 'ArrowUp') setZoom(Infinity);

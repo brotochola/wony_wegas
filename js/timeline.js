@@ -1,5 +1,5 @@
 import { state, uid, assetById, pushHistory, contentEnd, flash } from './state.js';
-import { assetRows, attachTip, hideTip } from './media.js';
+import { assetRows, attachTip, hideTip, frameShot, primeFrames, setShotHook } from './media.js';
 import {
   beginScrub, scrubTo, endScrub, commitPlayback, previewNow
 } from './playback.js';
@@ -463,18 +463,24 @@ function placeFilmstrip(bg, clip, asset) {
   // ponytail: only the thumbs on screen. A whole clip at max zoom is tens of thousands of nodes.
   const slot = thumbW / state.zoom;
   const start = clip.startOffset || 0;
+  const times = [];
   for (let i = first; i <= last; i++) {
-    const src = nearestFrame(asset, start + i * slot);
+    const time = start + (i + 0.5) * slot;
+    times.push(time);
+    const shot = frameShot(asset, time);
+    const src = shot.url || nearestFrame(asset, time);
     if (!src) continue;
     const img = document.createElement('img');
     img.src = src;
     img.alt = '';
+    img.dataset.shot = `${asset.id}:${shot.index}`;
     img.draggable = false;
     img.className = 'absolute top-0 h-full max-w-none object-cover pointer-events-none';
     img.style.left = `${i * thumbW}px`;
     img.style.width = `${thumbW}px`;
     bg.appendChild(img);
   }
+  primeFrames(asset, times);
 }
 
 function refreshFilmstrips() {
@@ -526,7 +532,6 @@ function buildClip(clip) {
     bg.appendChild(img);
   } else if (clip.type !== 'audio' && asset?.thumbnails?.length) {
     bg.dataset.film = '1';
-    placeFilmstrip(bg, clip, asset);
   }
   el.appendChild(bg);
 
@@ -916,6 +921,8 @@ export function renderTimeline() {
     playhead.style.height = `${height}px`;
   }
   if (snap) snap.style.height = `${height}px`;
+  refreshFilmstrips();
+  requestAnimationFrame(() => refreshFilmstrips());
 }
 
 function timeFromRuler(e) {
@@ -944,6 +951,9 @@ function onTimelineScroll() {
 }
 
 export function bindTimeline() {
+  setShotHook((asset, index, url) => {
+    for (const img of document.querySelectorAll(`img[data-shot="${asset.id}:${index}"]`)) img.src = url;
+  });
   const ruler = document.getElementById('timeline-ruler');
   const scroller = document.getElementById('timeline-scroll-container');
   scroller.addEventListener('scroll', onTimelineScroll);

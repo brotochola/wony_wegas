@@ -3,6 +3,7 @@ import { audioContext, drawContain, seekMedia, releaseAllClipVideos } from './pl
 
 let onReady = () => {};
 let onInsert = () => {};
+let onShot = () => {};
 let rememberHandle = async () => {};
 let lookupHandle = async () => null;
 let loadThumbs = async () => null;
@@ -445,7 +446,95 @@ async function entriesFromTransfer(transfer) {
   return [...(transfer.files || [])].map(file => ({ file }));
 }
 
+function shotIndex(time) {
+  const fps = Math.max(1, state.fps || 30);
+  return Math.max(0, Math.floor(Math.max(0, time) * fps + 1e-4));
+}
+
+const shotJobs = new Map();
+
+export function setShotHook(fn) {
+  onShot = fn || (() => {});
+}
+
+export function frameShot(asset, time) {
+  const index = shotIndex(time);
+  return { index, url: asset.frameShots?.get(index) || '' };
+}
+
+export function primeFrames(asset, times) {
+  if (!asset?.url || asset.type !== 'video') return;
+  if (!asset.frameShots) asset.frameShots = new Map();
+  const missing = [];
+  for (const time of times) {
+    const index = shotIndex(time);
+    if (!asset.frameShots.has(index)) missing.push(index);
+  }
+  let job = shotJobs.get(asset.id);
+  if (!job) {
+    const video = document.createElement('video');
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'auto';
+    video.src = asset.url;
+    park(video);
+    job = { video, want: new Set(), busy: false, canvas: null };
+    shotJobs.set(asset.id, job);
+  }
+  job.want = new Set(missing);
+  pumpShots(asset, job);
+}
+
+async function pumpShots(asset, job) {
+  if (job.busy || !job.want.size) return;
+  job.busy = true;
+  const fps = Math.max(1, state.fps || 30);
+  try {
+    if (job.video.readyState < 2) await waitMedia(job.video, 'loadeddata', 8000);
+    if (!job.canvas) {
+      job.canvas = document.createElement('canvas');
+      job.canvas.width = 160;
+      job.canvas.height = 90;
+    }
+    const ctx = job.canvas.getContext('2d');
+    while (job.want.size && shotJobs.get(asset.id) === job) {
+      const index = job.want.values().next().value;
+      job.want.delete(index);
+      if (asset.frameShots.has(index)) continue;
+      const time = Math.min((index + 0.5) / fps, Math.max(0, (asset.duration || index / fps) - 0.04));
+      await seekMedia(job.video, time, 700);
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, job.canvas.width, job.canvas.height);
+      try {
+        if (!drawContain(ctx, job.video, job.canvas.width, job.canvas.height)) continue;
+      } catch { continue; }
+      const url = job.canvas.toDataURL('image/jpeg', 0.7);
+      asset.frameShots.set(index, url);
+      // ponytail: only frames the timeline has asked to see. Drop the oldest past ~480.
+      if (asset.frameShots.size > 480) asset.frameShots.delete(asset.frameShots.keys().next().value);
+      onShot(asset, index, url);
+    }
+  } catch (err) {
+    console.warn('shot', err);
+    job.want.clear();
+  } finally {
+    job.busy = false;
+    if (job.want.size && shotJobs.get(asset.id) === job) pumpShots(asset, job);
+  }
+}
+
+function dropGrabber(asset) {
+  const job = shotJobs.get(asset.id);
+  if (!job) return;
+  shotJobs.delete(asset.id);
+  try { job.video.pause(); } catch { /* already gone */ }
+  job.video.removeAttribute('src');
+  job.video.load();
+  job.video.remove();
+}
+
 function dropAsset(asset, keep) {
+  dropGrabber(asset);
   try { asset.mediaSource?.disconnect(); } catch { /* already gone */ }
   try { asset.elementGain?.disconnect(); } catch { /* already gone */ }
   asset.element?.pause?.();
