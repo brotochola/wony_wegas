@@ -7,6 +7,11 @@ import {
 const BAR = { video: '#3b82f6', audio: '#10b981', image: '#f59e0b', text: '#8b5cf6' };
 
 let scrollLock = false;
+let onFirstVideo = () => {};
+
+export function setFirstVideoHandler(fn) {
+  onFirstVideo = fn;
+}
 
 function notify() {
   document.dispatchEvent(new CustomEvent('clip-selected'));
@@ -156,10 +161,12 @@ function place(asset, track, startTime) {
     text: '',
     textColor: '#00d2ff'
   };
+  const firstVideo = state.clips.length === 0 && type === 'video';
   hideSnap();
   state.clips.push(clip);
   if (type === 'video') makeAudioPartner(clip);
   state.selectedClipId = clip.id;
+  if (firstVideo) onFirstVideo(asset);
   pushHistory();
   renderTimeline();
   commitPlayback();

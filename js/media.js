@@ -318,7 +318,10 @@ export async function importFiles(fileList) {
       flash(err.message && err.message.includes('soporta') ? err.message : `No se pudo leer ${file.name}`, 'error');
     }
   }
-  if (added) flash(added === 1 ? '1 archivo importado' : `${added} archivos importados`);
+  if (added) {
+    state.dirty = true;
+    flash(added === 1 ? '1 archivo importado' : `${added} archivos importados`);
+  }
 }
 
 export async function replacePool(records) {

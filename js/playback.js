@@ -33,14 +33,60 @@ export function audioContext() {
   return audioCtx;
 }
 
+export function resizePreview() {
+  if (!previewCanvas) return;
+  previewCanvas.width = state.projectWidth;
+  previewCanvas.height = state.projectHeight;
+  previewCanvas.style.aspectRatio = `${state.projectWidth} / ${state.projectHeight}`;
+  if (previewCtx) paint(previewCtx, previewCanvas.width, previewCanvas.height, state.currentTime);
+  updateTimecode();
+}
+
 export function initPreview() {
   previewCanvas = document.getElementById('preview-canvas');
   previewCtx = previewCanvas.getContext('2d', { alpha: false });
-  previewCanvas.width = state.projectWidth;
-  previewCanvas.height = state.projectHeight;
   previewCtx.imageSmoothingQuality = 'high';
-  paint(previewCtx, previewCanvas.width, previewCanvas.height, 0);
-  updateTimecode();
+  resizePreview();
+}
+
+export function measureFps(video) {
+  return new Promise((resolve) => {
+    if (!video?.requestVideoFrameCallback) { resolve(0); return; }
+    const origin = video.currentTime || 0;
+    let frames = 0;
+    let start = 0;
+    let settled = false;
+    const finish = (fps) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { video.pause(); video.currentTime = origin; } catch { /* el elemento puede haber fallado */ }
+      resolve(fps);
+    };
+    const timer = setTimeout(() => finish(0), 1200);
+    const onFrame = (_now, meta) => {
+      if (!start) start = meta.mediaTime;
+      frames++;
+      const span = meta.mediaTime - start;
+      if (frames >= 6 && span > 0.12) {
+        const raw = (frames - 1) / span;
+        const presets = [24, 25, 30, 50, 60];
+        let best = Math.round(raw);
+        let diff = Infinity;
+        for (const preset of presets) {
+          const d = Math.abs(preset - raw);
+          if (d < diff) { diff = d; best = preset; }
+        }
+        finish(diff < 1.5 ? best : Math.max(1, Math.round(raw)));
+        return;
+      }
+      video.requestVideoFrameCallback(onFrame);
+    };
+    video.muted = true;
+    const pending = video.play();
+    if (!pending?.then) { finish(0); return; }
+    pending.then(() => video.requestVideoFrameCallback(onFrame)).catch(() => finish(0));
+  });
 }
 
 export function holdPreview(on) {

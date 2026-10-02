@@ -52,10 +52,10 @@
         <i class="fa-solid fa-rotate-right text-sm"></i>
       </button>
       <div class="h-4 w-px bg-vegas-border"></div>
-      <button type="button" id="btn-save" class="p-1.5 text-slate-400 hover:text-cyan-400" title="Guardar proyecto en el navegador">
+      <button type="button" id="btn-save" class="p-1.5 text-slate-400 hover:text-cyan-400" title="Guardar proyecto en esta computadora">
         <i class="fa-solid fa-floppy-disk text-sm"></i>
       </button>
-      <button type="button" id="btn-load" class="p-1.5 text-slate-400 hover:text-cyan-400" title="Cargar proyecto del navegador">
+      <button type="button" id="btn-load" class="p-1.5 text-slate-400 hover:text-cyan-400" title="Cargar un proyecto guardado">
         <i class="fa-solid fa-folder-open text-sm"></i>
       </button>
       <button type="button" id="btn-export" class="ml-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs px-4 py-1.5 rounded flex items-center gap-1.5 shadow-lg shadow-cyan-500/20">
@@ -107,12 +107,19 @@
     </section>
 
     <section class="col-span-6 bg-vegas-panel border border-vegas-border rounded flex flex-col overflow-hidden">
-      <div class="h-8 bg-vegas-panelLight border-b border-vegas-border flex items-center justify-between px-3 text-xs text-slate-400">
-        <span class="flex items-center gap-1.5"><i class="fa-solid fa-desktop text-cyan-400"></i> Previsualización</span>
-        <span id="preview-resolution" class="font-mono text-slate-400">1920x1080 @ 30fps</span>
+      <div class="min-h-8 bg-vegas-panelLight border-b border-vegas-border flex items-center justify-between gap-2 px-3 py-1 text-xs text-slate-400">
+        <span class="flex items-center gap-1.5 shrink-0"><i class="fa-solid fa-desktop text-cyan-400"></i> Proyecto</span>
+        <div class="flex items-center gap-1 font-mono">
+          <input id="proj-w" type="number" min="2" step="2" value="1920" title="Ancho" class="w-16 bg-vegas-bg border border-vegas-border rounded px-1 py-0.5 text-slate-100">
+          <span>×</span>
+          <input id="proj-h" type="number" min="2" step="2" value="1080" title="Alto" class="w-16 bg-vegas-bg border border-vegas-border rounded px-1 py-0.5 text-slate-100">
+          <input id="proj-fps" type="number" min="1" max="120" value="30" title="FPS" class="w-12 bg-vegas-bg border border-vegas-border rounded px-1 py-0.5 text-slate-100">
+          <span class="font-sans">fps</span>
+          <button type="button" id="proj-apply" class="ml-1 px-2 py-0.5 rounded bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-sans font-bold">Aplicar</button>
+        </div>
       </div>
       <div class="flex-1 bg-black flex items-center justify-center relative overflow-hidden p-2">
-        <canvas id="preview-canvas" class="max-w-full max-h-full aspect-video bg-black shadow-2xl border border-slate-800 rounded-sm"></canvas>
+        <canvas id="preview-canvas" class="max-w-full max-h-full bg-black shadow-2xl border border-slate-800 rounded-sm"></canvas>
       </div>
       <div class="h-12 bg-vegas-panelLight border-t border-vegas-border flex items-center justify-between px-4">
         <div class="font-mono text-lg font-bold text-cyan-400 bg-vegas-bg border border-vegas-border px-3 py-0.5 rounded shadow-inner" id="timecode-display">00:00:00:00</div>
@@ -177,6 +184,9 @@
               </div>
             </div>
           </div>
+          <button type="button" id="insp-use-project" class="w-full bg-vegas-border hover:bg-slate-700 text-slate-100 font-bold py-2 rounded">
+            Usar tamaño y fps del clip
+          </button>
           <div id="insp-audio-opts" class="space-y-3 pt-2 border-t border-vegas-border">
             <span class="text-emerald-400 font-bold block">Propiedades de Audio</span>
             <div>
@@ -300,7 +310,9 @@
             <label class="text-slate-400 block mb-1" for="exp-fps">FPS</label>
             <select id="exp-fps" class="w-full bg-vegas-bg border border-vegas-border rounded px-2 py-1 text-slate-100">
               <option value="24">24</option>
+              <option value="25">25</option>
               <option value="30" selected>30</option>
+              <option value="50">50</option>
               <option value="60">60</option>
             </select>
           </div>
@@ -321,6 +333,34 @@
           <i class="fa-solid fa-play"></i>
           <span>Iniciar Render</span>
         </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="library-modal" class="fixed inset-0 bg-slate-950/80 z-50 hidden items-center justify-center p-4">
+    <div class="bg-vegas-panel border border-vegas-border w-full max-w-md rounded-lg shadow-2xl overflow-hidden">
+      <div class="h-10 bg-vegas-panelLight border-b border-vegas-border flex items-center justify-between px-4 text-sm font-bold text-cyan-400">
+        <span id="library-title">Proyecto</span>
+        <button type="button" id="library-close" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div id="library-save" class="p-4 space-y-3 text-xs hidden">
+        <label class="text-slate-400 block" for="library-name">Nombre del proyecto</label>
+        <input id="library-name" type="text" class="w-full bg-vegas-bg border border-vegas-border rounded px-2.5 py-1.5 text-slate-100">
+        <div class="flex justify-end gap-2">
+          <button type="button" id="library-save-cancel" class="px-3 py-1.5 text-slate-400 hover:text-white">Cancelar</button>
+          <button type="button" id="library-save-ok" class="px-3 py-1.5 rounded bg-cyan-500 text-slate-950 font-bold">Guardar</button>
+        </div>
+      </div>
+      <div id="library-list" class="p-2 max-h-80 overflow-y-auto text-xs hidden"></div>
+    </div>
+  </div>
+
+  <div id="ask-modal" class="fixed inset-0 bg-slate-950/80 z-50 hidden items-center justify-center p-4">
+    <div class="bg-vegas-panel border border-vegas-border w-full max-w-md rounded-lg shadow-2xl p-4">
+      <p id="ask-text" class="text-sm text-slate-200"></p>
+      <div class="flex justify-end gap-2 mt-4 text-xs">
+        <button type="button" id="ask-no" class="px-3 py-1.5 text-slate-400 hover:text-white">No</button>
+        <button type="button" id="ask-yes" class="px-3 py-1.5 rounded bg-cyan-500 text-slate-950 font-bold">Sí</button>
       </div>
     </div>
   </div>

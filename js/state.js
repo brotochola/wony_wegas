@@ -15,7 +15,10 @@ export const state = {
   clips: [],
   projectWidth: 1920,
   projectHeight: 1080,
-  fps: 30
+  fps: 30,
+  projectName: '',
+  dirty: false,
+  askedFirstClip: false
 };
 
 export function uid(prefix) {
@@ -66,9 +69,11 @@ export function pushHistory() {
     updateHistoryButtons();
     return;
   }
+  const hadHistory = state.historyIndex >= 0;
   state.history = state.history.slice(0, state.historyIndex + 1);
   state.history.push(snapshot);
   state.historyIndex = state.history.length - 1;
+  if (hadHistory) state.dirty = true;
   updateHistoryButtons();
 }
 
@@ -76,6 +81,7 @@ export function undo() {
   if (state.historyIndex <= 0) return false;
   state.historyIndex--;
   restoreHistory();
+  state.dirty = true;
   return true;
 }
 
@@ -83,6 +89,7 @@ export function redo() {
   if (state.historyIndex >= state.history.length - 1) return false;
   state.historyIndex++;
   restoreHistory();
+  state.dirty = true;
   return true;
 }
 

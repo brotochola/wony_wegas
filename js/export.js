@@ -296,6 +296,16 @@ export async function startExport() {
 }
 
 export function openExportModal() {
+  document.getElementById('exp-width').value = state.projectWidth;
+  document.getElementById('exp-height').value = state.projectHeight;
+  const fps = document.getElementById('exp-fps');
+  if (![...fps.options].some(opt => Number(opt.value) === state.fps)) {
+    const extra = document.createElement('option');
+    extra.value = String(state.fps);
+    extra.textContent = String(state.fps);
+    fps.appendChild(extra);
+  }
+  fps.value = String(state.fps);
   document.getElementById('export-modal').classList.remove('hidden');
 }
 

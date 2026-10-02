@@ -1,78 +1,267 @@
-import { state, pushHistory, undo, redo, resetHistory, assetById, flash } from './state.js';
+import { state, pushHistory, undo, redo, resetHistory, assetById, flash, uid } from './state.js';
 import {
   importFiles, bindMediaDrop, setMediaHooks, replacePool, poolRecords, renderMediaPool
 } from './media.js';
 import {
   bindTimeline, renderTimeline, addTrack, addTextClip, setZoom, toggleSnapping,
-  splitSelected, deleteSelected, duplicateSelected, unlinkSelected, insertAsset
+  splitSelected, deleteSelected, duplicateSelected, unlinkSelected, insertAsset, setFirstVideoHandler
 } from './timeline.js';
 import {
-  initPreview, setSpanListener, togglePlay, seekToStart, seekToEnd, seek, stopPlaying, previewNow
+  initPreview, resizePreview, setSpanListener, togglePlay, seekToStart, seekToEnd, seek, stopPlaying, previewNow, measureFps
 } from './playback.js';
 import { openExportModal, closeExportModal, applyExportPreset, checkCodecSupport, startExport } from './export.js';
 
 function openDb() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('vegas-web', 1);
+    const req = indexedDB.open('vegas-web', 2);
     req.onupgradeneeded = () => {
-      if (!req.result.objectStoreNames.contains('kv')) req.result.createObjectStore('kv');
+      const db = req.result;
+      if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
+      if (!db.objectStoreNames.contains('projects')) db.createObjectStore('projects', { keyPath: 'id' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
 
+function showBox(id) {
+  const el = document.getElementById(id);
+  el.classList.remove('hidden');
+  el.classList.add('flex');
+}
+
+function hideBox(id) {
+  const el = document.getElementById(id);
+  el.classList.add('hidden');
+  el.classList.remove('flex');
+}
+
+function ask(text) {
+  return new Promise((resolve) => {
+    document.getElementById('ask-text').textContent = text;
+    showBox('ask-modal');
+    const yes = document.getElementById('ask-yes');
+    const no = document.getElementById('ask-no');
+    const done = (value) => {
+      hideBox('ask-modal');
+      yes.onclick = null;
+      no.onclick = null;
+      resolve(value);
+    };
+    yes.onclick = () => done(true);
+    no.onclick = () => done(false);
+  });
+}
+
+function askName(current) {
+  return new Promise((resolve) => {
+    document.getElementById('library-title').textContent = 'Guardar proyecto';
+    document.getElementById('library-save').classList.remove('hidden');
+    document.getElementById('library-list').classList.add('hidden');
+    const input = document.getElementById('library-name');
+    input.value = current || '';
+    showBox('library-modal');
+    input.focus();
+    input.select();
+    const ok = document.getElementById('library-save-ok');
+    const cancel = document.getElementById('library-save-cancel');
+    const close = document.getElementById('library-close');
+    const finish = (name) => {
+      hideBox('library-modal');
+      ok.onclick = null;
+      cancel.onclick = null;
+      close.onclick = null;
+      input.onkeydown = null;
+      resolve(name);
+    };
+    ok.onclick = () => {
+      const name = input.value.trim();
+      if (!name) return;
+      finish(name);
+    };
+    cancel.onclick = () => finish('');
+    close.onclick = () => finish('');
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') ok.click();
+      if (e.key === 'Escape') finish('');
+    };
+  });
+}
+
+function listProjects(db) {
+  return new Promise((resolve, reject) => {
+    const req = db.transaction('projects', 'readonly').objectStore('projects').getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function putProject(db, record) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('projects', 'readwrite');
+    tx.objectStore('projects').put(record);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function syncProjectInputs() {
+  document.getElementById('proj-w').value = state.projectWidth;
+  document.getElementById('proj-h').value = state.projectHeight;
+  document.getElementById('proj-fps').value = state.fps;
+}
+
+function applyProject(width, height, fps) {
+  state.projectWidth = Math.max(2, Math.round(Number(width) || 2));
+  state.projectHeight = Math.max(2, Math.round(Number(height) || 2));
+  state.fps = Math.max(1, Math.round(Number(fps) || 30));
+  syncProjectInputs();
+  resizePreview();
+  seek(state.currentTime);
+  state.dirty = true;
+}
+
 async function saveProject() {
   try {
+    const name = await askName(state.projectName || 'Proyecto');
+    if (!name) return;
     const db = await openDb();
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction('kv', 'readwrite');
-      tx.objectStore('kv').put({
-        tracks: state.tracks,
-        clips: state.clips,
-        media: poolRecords()
-      }, 'project');
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    const all = await listProjects(db);
+    const existing = all.find(p => p.name.toLowerCase() === name.toLowerCase());
+    if (existing && !await ask(`Ya existe «${existing.name}». ¿Reemplazarlo?`)) {
+      db.close();
+      return;
+    }
+    await putProject(db, {
+      id: existing?.id || uid('proj'),
+      name,
+      savedAt: Date.now(),
+      width: state.projectWidth,
+      height: state.projectHeight,
+      fps: state.fps,
+      tracks: state.tracks,
+      clips: state.clips,
+      media: poolRecords()
     });
     db.close();
-    flash('Guardado en el navegador');
+    state.projectName = name;
+    state.dirty = false;
+    document.getElementById('project-title').textContent = name;
+    flash(`Guardado: ${name}`);
   } catch (err) {
     console.warn(err);
-    flash('No se pudo guardar');
+    flash('No se pudo guardar', 'error');
   }
+}
+
+async function restoreProject(project) {
+  stopPlaying({ paint: false });
+  state.projectName = project.name || '';
+  state.projectWidth = project.width || 1920;
+  state.projectHeight = project.height || 1080;
+  state.fps = project.fps || 30;
+  state.askedFirstClip = true;
+  state.tracks = project.tracks?.length ? project.tracks : state.tracks;
+  state.clips = project.clips || [];
+  state.selectedClipId = null;
+  state.currentTime = 0;
+  state.span = 0;
+  document.getElementById('project-title').textContent = state.projectName || 'Proyecto_Vegas_01.veg';
+  syncProjectInputs();
+  resizePreview();
+  await replacePool(project.media || []);
+  resetHistory();
+  state.dirty = false;
+  renderTimeline();
+  seek(0);
+  updateInspector();
+  flash(`Proyecto cargado: ${state.projectName}`);
+}
+
+function pickProject(projects) {
+  return new Promise((resolve) => {
+    document.getElementById('library-title').textContent = 'Cargar proyecto';
+    document.getElementById('library-save').classList.add('hidden');
+    const list = document.getElementById('library-list');
+    list.classList.remove('hidden');
+    list.replaceChildren();
+    for (const project of projects) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'w-full text-left px-3 py-2 rounded hover:bg-vegas-panelLight flex items-center justify-between gap-3';
+      const when = new Date(project.savedAt || 0).toLocaleString();
+      const label = document.createElement('span');
+      const title = document.createElement('b');
+      title.className = 'text-slate-100 block';
+      title.textContent = project.name;
+      const meta = document.createElement('span');
+      meta.className = 'text-slate-500';
+      meta.textContent = `${project.width || '—'}×${project.height || '—'} · ${project.fps || '—'} fps · ${when}`;
+      label.append(title, meta);
+      row.appendChild(label);
+      row.addEventListener('click', () => finish(project));
+      list.appendChild(row);
+    }
+    showBox('library-modal');
+    const close = document.getElementById('library-close');
+    const finish = (project) => {
+      hideBox('library-modal');
+      close.onclick = null;
+      resolve(project);
+    };
+    close.onclick = () => finish(null);
+  });
 }
 
 async function loadProject() {
   try {
     const db = await openDb();
-    const project = await new Promise((resolve, reject) => {
-      const tx = db.transaction('kv', 'readonly');
-      const req = tx.objectStore('kv').get('project');
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
-    });
+    const all = (await listProjects(db)).sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
     db.close();
-    if (!project) {
-      flash('No hay proyecto guardado');
+    if (!all.length) {
+      flash('No hay proyectos guardados');
       return;
     }
-    stopPlaying({ paint: false });
-    state.tracks = project.tracks?.length ? project.tracks : state.tracks;
-    state.clips = project.clips || [];
-    state.selectedClipId = null;
-    state.currentTime = 0;
-    state.span = 0;
-    await replacePool(project.media || []);
-    resetHistory();
-    renderTimeline();
-    seek(0);
-    updateInspector();
-    flash('Proyecto cargado');
+    const picked = await pickProject(all);
+    if (!picked) return;
+    if (state.dirty && !await ask('Hay cambios sin guardar. ¿Cargar este proyecto igual?')) return;
+    await restoreProject(picked);
   } catch (err) {
     console.warn(err);
-    flash('No se pudo cargar');
+    flash('No se pudo cargar', 'error');
   }
+}
+
+async function offerProjectMatch(asset) {
+  if (state.askedFirstClip || !asset?.width || !asset?.height) return;
+  state.askedFirstClip = true;
+  let fps = asset.fps || 0;
+  if (!fps && asset.element) {
+    fps = await measureFps(asset.element);
+    if (fps) asset.fps = fps;
+    seek(state.currentTime);
+  }
+  const fpsText = fps ? `${fps} fps` : `${state.fps} fps (no se pudo leer el del video)`;
+  const yes = await ask(`Este video es ${asset.width}×${asset.height} a ${fpsText}. ¿Usar ese tamaño y fps para el proyecto?`);
+  if (!yes) return;
+  applyProject(asset.width, asset.height, fps || state.fps);
+  state.dirty = true;
+}
+
+async function useClipForProject() {
+  const clip = state.clips.find(c => c.id === state.selectedClipId);
+  const asset = clip ? assetById(clip.assetId) : null;
+  if (!asset?.width || !asset?.height) {
+    flash('Este clip no tiene tamaño de imagen', 'error');
+    return;
+  }
+  let fps = state.fps;
+  if (asset.type === 'video') {
+    fps = asset.fps || await measureFps(asset.element) || state.fps;
+    if (fps) asset.fps = fps;
+  }
+  applyProject(asset.width, asset.height, fps);
+  flash(`Proyecto ${state.projectWidth}×${state.projectHeight} a ${state.fps} fps`);
 }
 
 function updateInspector() {
@@ -97,6 +286,8 @@ function updateInspector() {
   document.getElementById('insp-fade-out').value = (clip.fadeOut || 0).toFixed(2);
   document.getElementById('insp-volume').value = clip.volume ?? 1;
   document.getElementById('insp-volume-val').textContent = `${Math.round((clip.volume ?? 1) * 100)}%`;
+  const asset = assetById(clip.assetId);
+  document.getElementById('insp-use-project').classList.toggle('hidden', !(asset?.width && asset?.height));
 }
 
 function applyInspector(commit) {
@@ -158,6 +349,19 @@ function bindUi() {
   });
   document.getElementById('btn-save').addEventListener('click', saveProject);
   document.getElementById('btn-load').addEventListener('click', loadProject);
+  document.getElementById('proj-apply').addEventListener('click', () => {
+    applyProject(
+      document.getElementById('proj-w').value,
+      document.getElementById('proj-h').value,
+      document.getElementById('proj-fps').value
+    );
+  });
+  document.getElementById('insp-use-project').addEventListener('click', useClipForProject);
+  window.addEventListener('beforeunload', (e) => {
+    if (!state.dirty) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
   document.getElementById('btn-export').addEventListener('click', () => {
     openExportModal();
     checkCodecSupport();
@@ -210,6 +414,8 @@ function bindUi() {
 
 function boot() {
   initPreview();
+  syncProjectInputs();
+  setFirstVideoHandler(offerProjectMatch);
   setSpanListener(() => renderTimeline());
   setMediaHooks({ ready: () => renderTimeline(), insert: insertAsset });
   bindMediaDrop();
