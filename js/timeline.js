@@ -276,16 +276,40 @@ export function toggleMute(trackId) {
 }
 
 const ZOOM_MIN = 0.25;
-const ZOOM_MAX = 8000;
+
+function filmHeight() {
+  const bg = document.querySelector('[data-film]');
+  if (bg?.clientHeight) return bg.clientHeight;
+  return 56;
+}
+
+function thumbWidth(asset, height) {
+  const h = height || filmHeight();
+  const aspect = asset?.width > 0 && asset?.height > 0 ? asset.width / asset.height : 16 / 9;
+  return Math.max(16, h * aspect);
+}
+
+function zoomMax() {
+  const fps = Math.max(1, state.fps || 30);
+  let width = thumbWidth(null);
+  for (const clip of state.clips) {
+    if (clip.type === 'audio' || clip.type === 'text') continue;
+    const asset = assetById(clip.assetId);
+    if (asset?.type === 'video') width = Math.max(width, thumbWidth(asset));
+  }
+  return width * fps;
+}
 
 export function sliderToZoom(t) {
   const u = Math.min(1, Math.max(0, Number(t) / 100));
-  return ZOOM_MIN * Math.pow(ZOOM_MAX / ZOOM_MIN, u);
+  const max = zoomMax();
+  return ZOOM_MIN * Math.pow(max / ZOOM_MIN, u);
 }
 
 export function zoomToSlider(z) {
-  const zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Number(z) || ZOOM_MIN));
-  const u = Math.log(zoom / ZOOM_MIN) / Math.log(ZOOM_MAX / ZOOM_MIN);
+  const max = zoomMax();
+  const zoom = Math.min(max, Math.max(ZOOM_MIN, Number(z) || ZOOM_MIN));
+  const u = Math.log(zoom / ZOOM_MIN) / Math.log(max / ZOOM_MIN);
   return String(Math.round(Math.min(1, Math.max(0, u)) * 100));
 }
 
@@ -293,7 +317,7 @@ export function setZoom(value) {
   const el = document.getElementById('timeline-scroll-container');
   const old = state.zoom;
   const anchor = el ? state.currentTime * old - el.scrollLeft : 0;
-  state.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Number(value) || 40));
+  state.zoom = Math.min(zoomMax(), Math.max(ZOOM_MIN, Number(value) || 40));
   ensureSpan();
   renderTimeline();
   if (el) el.scrollLeft = Math.max(0, state.currentTime * state.zoom - anchor);
@@ -429,9 +453,7 @@ function filmWindow(clip, thumbW) {
 }
 
 function placeFilmstrip(bg, clip, asset) {
-  const height = bg.clientHeight || 56;
-  const aspect = asset.width > 0 && asset.height > 0 ? asset.width / asset.height : 16 / 9;
-  const thumbW = Math.max(16, height * aspect);
+  const thumbW = thumbWidth(asset, bg.clientHeight || filmHeight());
   const { first, last } = filmWindow(clip, thumbW);
   const key = `${state.zoom}|${clip.startOffset || 0}|${clip.duration}|${first}|${last}|${thumbW.toFixed(1)}`;
   if (bg.dataset.filmKey === key) return;
@@ -783,6 +805,7 @@ function showContextMenu(x, y) {
 
 export function renderTimeline() {
   ensureSpan();
+  if (state.zoom > zoomMax()) state.zoom = zoomMax();
   const headers = document.getElementById('track-header-list');
   const lanes = document.getElementById('track-lanes');
   const ruler = document.getElementById('timeline-ruler');

@@ -761,7 +761,7 @@ function onKeyDown(e) {
     seek(state.currentTime + dir * step);
   } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
     e.preventDefault();
-    if (e.altKey && e.key === 'ArrowUp') setZoom(100 * (state.fps || 30));
+    if (e.altKey && e.key === 'ArrowUp') setZoom(Infinity);
     else if (!e.altKey) {
       const factor = cmd ? 2 : 1.15;
       setZoom(state.zoom * (e.key === 'ArrowUp' ? factor : 1 / factor));
