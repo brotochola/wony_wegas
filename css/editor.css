@@ -18,13 +18,13 @@
   background: rgba(0, 0, 0, 0.45);
   z-index: 5;
 }
-#clip-ghost {
+.clip-ghost {
   border: 2px solid #67e8f9;
   background: rgba(34, 211, 238, 0.16);
   box-shadow: 0 0 0 1px rgba(8, 47, 73, 0.6);
   z-index: 35;
 }
-#clip-ghost.bad {
+.clip-ghost.bad {
   border-color: #f87171;
   background: rgba(248, 113, 113, 0.14);
 }

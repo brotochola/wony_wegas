@@ -432,7 +432,7 @@ function showGhost(id, lane, time, duration, ok) {
   if (!ghost) {
     ghost = document.createElement('div');
     ghost.id = id;
-    ghost.className = 'absolute rounded pointer-events-none';
+    ghost.className = 'clip-ghost absolute rounded pointer-events-none';
     lanes.appendChild(ghost);
   }
   ghost.classList.toggle('bad', !ok);

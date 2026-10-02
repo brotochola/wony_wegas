@@ -50,15 +50,49 @@ function park(el) {
 export async function loadAsset(file, id = uid('asset')) {
   const type = kindOf(file);
   if (!type) throw new Error('tipo');
-  const url = URL.createObjectURL(file);
-  const asset = {
+  return mountAsset({
     id,
     name: file.name,
     type,
-    url,
-    file,
     mime: file.type || (file.name.includes('.') ? file.name.split('.').pop().toUpperCase() : type),
     size: file.size,
+    url: URL.createObjectURL(file),
+    file,
+    ownedUrl: true
+  });
+}
+
+export async function loadFromRecord(rec) {
+  if (rec.blob) {
+    const mime = rec.mime && rec.mime.includes('/') ? rec.mime : (rec.blob.type || '');
+    const file = new File([rec.blob], rec.name, { type: mime });
+    return loadAsset(file, rec.id);
+  }
+  if (!rec.url) throw new Error('sin url');
+  const type = rec.type || kindOf({ name: rec.name || '', type: rec.mime || '' });
+  if (!type) throw new Error('tipo');
+  return mountAsset({
+    id: rec.id || uid('asset'),
+    name: rec.name || 'asset',
+    type,
+    mime: rec.mime || type,
+    size: 0,
+    url: rec.url,
+    file: null,
+    ownedUrl: false
+  });
+}
+
+async function mountAsset(source) {
+  const { id, name, type, mime, size, url, file, ownedUrl } = source;
+  const asset = {
+    id,
+    name,
+    type,
+    url,
+    file,
+    mime,
+    size,
     duration: type === 'image' ? 5 : 0,
     width: 0,
     height: 0,
@@ -93,14 +127,14 @@ export async function loadAsset(file, id = uid('asset')) {
       asset.duration = video.duration || 0;
       asset.width = video.videoWidth || 0;
       asset.height = video.videoHeight || 0;
-      if (!asset.duration) throw new Error(video.error ? codecMessage(file.name) : 'duración');
+      if (!asset.duration) throw new Error(video.error ? codecMessage(name) : 'duración');
       try { await video.play(); video.pause(); video.currentTime = 0; } catch { /* el gesto de importar a veces no alcanza para el autoplay */ }
       asset.width = video.videoWidth || asset.width;
       asset.height = video.videoHeight || asset.height;
       if (video.error) {
         asset.unreadable = true;
         asset.warned = true;
-        flash(codecMessage(file.name), 'error');
+        flash(codecMessage(name), 'error');
       }
     } else if (type === 'audio') {
       const audio = document.createElement('audio');
@@ -121,8 +155,8 @@ export async function loadAsset(file, id = uid('asset')) {
     }
     return asset;
   } catch (err) {
-    URL.revokeObjectURL(url);
-    if (asset.element?.error) throw new Error(codecMessage(file.name));
+    if (ownedUrl) URL.revokeObjectURL(url);
+    if (asset.element?.error) throw new Error(codecMessage(name));
     throw err;
   }
 }
@@ -239,7 +273,8 @@ async function decodeAudio(asset) {
   if (!state.mediaPool.includes(asset)) return;
   const ctx = audioContext();
   try {
-    const copy = (await asset.file.arrayBuffer()).slice(0);
+    const raw = asset.file ? await asset.file.arrayBuffer() : await (await fetch(asset.url)).arrayBuffer();
+    const copy = raw.slice(0);
     asset.audioBuffer = await ctx.decodeAudioData(copy);
     asset.waveform = waveformFromBuffer(asset.audioBuffer);
     if (asset.type === 'audio' && !asset.duration) asset.duration = asset.audioBuffer.duration;
@@ -326,25 +361,24 @@ export async function importFiles(fileList) {
 
 export async function replacePool(records) {
   audioContext();
+  const keep = new Set(records.map(rec => rec.url).filter(url => url && url.startsWith('blob:')));
   for (const asset of state.mediaPool) {
     try { asset.mediaSource?.disconnect(); } catch { /* already gone */ }
     try { asset.elementGain?.disconnect(); } catch { /* already gone */ }
     asset.element?.pause?.();
     asset.audioEl?.pause?.();
-    if (asset.url) URL.revokeObjectURL(asset.url);
+    if (asset.url && asset.url.startsWith('blob:') && !keep.has(asset.url)) URL.revokeObjectURL(asset.url);
   }
   state.mediaPool = [];
   renderMediaPool();
   for (const rec of records) {
     try {
-      const mime = rec.mime && rec.mime.includes('/') ? rec.mime : (rec.blob.type || '');
-      const file = new File([rec.blob], rec.name, { type: mime });
-      const asset = await loadAsset(file, rec.id);
+      const asset = await loadFromRecord(rec);
       state.mediaPool.push(asset);
       warm(asset);
     } catch (err) {
       console.warn(err);
-      flash(`No se pudo leer ${rec.name}`);
+      flash(`No se pudo leer ${rec.name || 'un asset'}`, 'error');
     }
   }
   renderMediaPool();
@@ -499,7 +533,8 @@ export function poolRecords() {
   return state.mediaPool.map(asset => ({
     id: asset.id,
     name: asset.name,
+    type: asset.type,
     mime: asset.mime,
-    blob: asset.file
+    url: asset.url
   }));
 }
