@@ -3,10 +3,28 @@ import { audioContext, drawContain, seekMedia, releaseAllClipVideos } from './pl
 
 let onReady = () => {};
 let onInsert = () => {};
+let rememberHandle = async () => {};
+let lookupHandle = async () => null;
 
 export function setMediaHooks({ ready, insert }) {
   if (ready) onReady = ready;
   if (insert) onInsert = insert;
+}
+
+export function setFileHooks({ remember, lookup }) {
+  if (remember) rememberHandle = remember;
+  if (lookup) lookupHandle = lookup;
+}
+
+export function fileKey(file) {
+  return `${file.name}\0${file.size}\0${file.lastModified || 0}`;
+}
+
+function stamp(asset, file, handle) {
+  asset.fileKey = fileKey(file);
+  asset.size = file.size;
+  asset.lastModified = file.lastModified || 0;
+  if (handle) asset.handle = handle;
 }
 
 function kindOf(file) {
@@ -337,20 +355,27 @@ function warm(asset) {
   });
 }
 
-export async function importFiles(fileList) {
+async function addEntry(entry, id) {
+  const asset = await loadAsset(entry.file, id);
+  stamp(asset, entry.file, entry.handle);
+  if (entry.handle) await rememberHandle(asset);
+  state.mediaPool.push(asset);
+  renderMediaPool();
+  warm(asset);
+}
+
+export async function importEntries(entries) {
   audioContext();
-  const files = [...fileList];
   let added = 0;
-  for (const file of files) {
+  for (const entry of entries) {
+    if (!entry?.file) continue;
     try {
-      const asset = await loadAsset(file);
-      state.mediaPool.push(asset);
+      await addEntry(entry);
       added++;
-      renderMediaPool();
-      warm(asset);
     } catch (err) {
       console.warn(err);
-      flash(err.message && err.message.includes('soporta') ? err.message : `No se pudo leer ${file.name}`, 'error');
+      const name = entry.file?.name || 'archivo';
+      flash(err.message && err.message.includes('soporta') ? err.message : `No se pudo leer ${name}`, 'error');
     }
   }
   if (added) {
@@ -358,6 +383,30 @@ export async function importFiles(fileList) {
     document.dispatchEvent(new CustomEvent('project-dirty'));
     flash(added === 1 ? '1 archivo importado' : `${added} archivos importados`);
   }
+}
+
+export async function importFiles(fileList) {
+  return importEntries([...fileList].map(file => ({ file })));
+}
+
+async function entriesFromTransfer(transfer) {
+  const items = [...(transfer.items || [])].filter(item => item.kind === 'file');
+  if (items.length && items[0].getAsFileSystemHandle) {
+    const entries = [];
+    for (const item of items) {
+      try {
+        const handle = await item.getAsFileSystemHandle();
+        if (handle?.kind === 'file') {
+          entries.push({ file: await handle.getFile(), handle });
+          continue;
+        }
+      } catch { /* el navegador no dio permiso de reabrir */ }
+      const file = item.getAsFile();
+      if (file) entries.push({ file });
+    }
+    if (entries.length) return entries;
+  }
+  return [...(transfer.files || [])].map(file => ({ file }));
 }
 
 function dropAsset(asset, keep) {
@@ -385,17 +434,38 @@ async function urlAlive(url) {
 export async function openMedia(records) {
   audioContext();
   releaseAllClipVideos();
-  const keep = new Set(records.map(rec => rec.url).filter(url => url && url.startsWith('blob:')));
+  const alive = new Set(state.mediaPool.map(asset => asset.url).filter(Boolean));
+  const keep = new Set(records.map(rec => rec.url).filter(url => url && alive.has(url) && url.startsWith('blob:')));
   for (const asset of state.mediaPool) dropAsset(asset, keep);
   state.mediaPool = [];
   renderMediaPool();
   const missing = [];
   for (const rec of records) {
     try {
-      if (!await urlAlive(rec.url)) throw new Error('url');
-      const asset = await loadFromRecord(rec);
-      state.mediaPool.push(asset);
-      warm(asset);
+      if (rec.url && alive.has(rec.url)) {
+        const asset = await loadFromRecord(rec);
+        if (rec.fileKey) asset.fileKey = rec.fileKey;
+        if (rec.lastModified) asset.lastModified = rec.lastModified;
+        state.mediaPool.push(asset);
+        warm(asset);
+        continue;
+      }
+      const found = await lookupHandle(rec);
+      if (found?.file) {
+        await addEntry({ file: found.file, handle: found.handle }, rec.id);
+        continue;
+      }
+      if (found?.handle) {
+        missing.push({ ...rec, handle: found.handle });
+        continue;
+      }
+      if (rec.url && !rec.url.startsWith('blob:') && await urlAlive(rec.url)) {
+        const asset = await loadFromRecord(rec);
+        state.mediaPool.push(asset);
+        warm(asset);
+        continue;
+      }
+      missing.push(rec);
     } catch (err) {
       if (err?.message !== 'url') console.warn(err);
       missing.push(rec);
@@ -405,33 +475,37 @@ export async function openMedia(records) {
   return missing;
 }
 
-export async function attachFiles(records, files) {
+export async function attachFiles(records, items) {
+  const entries = (items || []).map(item => item?.file ? item : { file: item });
+  const byId = new Map(entries.filter(entry => entry.id).map(entry => [entry.id, entry]));
   const buckets = new Map();
-  for (const file of files || []) {
-    const key = file.name.toLowerCase();
+  for (const entry of entries) {
+    if (entry.id) continue;
+    const key = entry.file.name.toLowerCase();
     const list = buckets.get(key) || [];
-    list.push(file);
+    list.push(entry);
     buckets.set(key, list);
   }
   const missing = [];
   for (const rec of records) {
     if (state.mediaPool.some(asset => asset.id === rec.id)) continue;
-    const list = buckets.get((rec.name || '').toLowerCase());
-    const file = list?.shift();
-    if (!file) {
+    const entry = byId.get(rec.id) || buckets.get((rec.name || '').toLowerCase())?.shift();
+    if (!entry) {
       missing.push(rec);
       continue;
     }
     try {
-      const asset = await loadAsset(file, rec.id);
-      state.mediaPool.push(asset);
-      warm(asset);
+      await addEntry(entry, rec.id);
     } catch (err) {
       console.warn(err);
       missing.push(rec);
     }
   }
   renderMediaPool();
+  if (entries.length) {
+    state.dirty = true;
+    document.dispatchEvent(new CustomEvent('project-dirty'));
+  }
   return missing;
 }
 
@@ -610,20 +684,21 @@ export function bindMediaDrop() {
   zone.addEventListener('dragleave', (e) => {
     if (!zone.contains(e.relatedTarget)) grid.classList.remove('ring-1', 'ring-cyan-400');
   });
-  zone.addEventListener('drop', (e) => {
-    if (!e.dataTransfer.files?.length) return;
+  zone.addEventListener('drop', async (e) => {
+    if (!e.dataTransfer.files?.length && ![...(e.dataTransfer.items || [])].some(item => item.kind === 'file')) return;
     e.preventDefault();
     grid.classList.remove('ring-1', 'ring-cyan-400');
-    importFiles(e.dataTransfer.files);
+    importEntries(await entriesFromTransfer(e.dataTransfer));
   });
   document.addEventListener('dragover', (e) => {
     if ([...e.dataTransfer.types].includes('Files')) e.preventDefault();
   });
-  document.addEventListener('drop', (e) => {
+  document.addEventListener('drop', async (e) => {
     if (![...e.dataTransfer.types].includes('Files')) return;
     e.preventDefault();
-    if (zone.contains(e.target) || !e.dataTransfer.files?.length) return;
-    importFiles(e.dataTransfer.files);
+    if (zone.contains(e.target)) return;
+    const entries = await entriesFromTransfer(e.dataTransfer);
+    if (entries.length) importEntries(entries);
   });
 }
 
@@ -633,6 +708,26 @@ export function poolRecords() {
     name: asset.name,
     type: asset.type,
     mime: asset.mime,
-    url: asset.url
+    url: asset.url,
+    size: asset.size || 0,
+    lastModified: asset.lastModified || 0,
+    fileKey: asset.fileKey || ''
   }));
+}
+
+export const MEDIA_TYPES = [{
+  description: 'Video, audio o imagen',
+  accept: {
+    'video/*': ['.mp4', '.webm', '.mov', '.mkv', '.m4v', '.ogv'],
+    'audio/*': ['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.opus'],
+    'image/*': ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.avif']
+  }
+}];
+
+export async function pickWithHandles() {
+  if (!window.showOpenFilePicker) return null;
+  const handles = await window.showOpenFilePicker({ multiple: true, types: MEDIA_TYPES });
+  const entries = [];
+  for (const handle of handles) entries.push({ file: await handle.getFile(), handle });
+  return entries;
 }

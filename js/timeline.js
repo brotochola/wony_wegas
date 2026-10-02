@@ -332,6 +332,18 @@ function makeHandle(className, handle, title) {
   return el;
 }
 
+function placeWaveform(img, clip, asset) {
+  const total = Math.max(0.05, asset?.duration || clip.duration);
+  const offset = Math.max(0, clip.startOffset || 0);
+  const span = Math.max(0.05, clip.duration);
+  img.style.height = '100%';
+  img.style.width = `${(total / span) * 100}%`;
+  img.style.maxWidth = 'none';
+  img.style.flex = 'none';
+  img.style.objectFit = 'fill';
+  img.style.marginLeft = `${-(offset / span) * 100}%`;
+}
+
 function buildClip(clip) {
   const el = document.createElement('div');
   const selected = state.selectedClipId === clip.id;
@@ -348,7 +360,9 @@ function buildClip(clip) {
     const img = document.createElement('img');
     img.src = asset.waveform;
     img.alt = '';
-    img.className = 'w-full h-full object-fill';
+    img.dataset.wave = '1';
+    img.draggable = false;
+    placeWaveform(img, clip, asset);
     bg.appendChild(img);
   } else if (clip.type !== 'audio' && asset?.type === 'image' && asset.url) {
     const img = document.createElement('img');
@@ -553,6 +567,8 @@ function layoutClip(clip) {
   const handleOut = el.querySelector('[data-handle="fade-out"]');
   if (handleIn) handleIn.style.left = `${Math.max(0, (clip.fadeIn || 0) * state.zoom)}px`;
   if (handleOut) handleOut.style.right = `${Math.max(0, (clip.fadeOut || 0) * state.zoom)}px`;
+  const wave = el.querySelector('[data-wave]');
+  if (wave) placeWaveform(wave, clip, assetById(clip.assetId));
 }
 
 function startTrim(e, clip, handle) {

@@ -1,6 +1,6 @@
 import { state, pushHistory, undo, redo, resetHistory, assetById, flash, uid } from './state.js';
 import {
-  importFiles, bindMediaDrop, setMediaHooks, openMedia, attachFiles, removeUnused, poolRecords, renderMediaPool
+  importFiles, importEntries, bindMediaDrop, setMediaHooks, setFileHooks, openMedia, attachFiles, removeUnused, poolRecords, renderMediaPool, pickWithHandles, fileKey
 } from './media.js';
 import {
   bindTimeline, renderTimeline, addTrack, addTextClip, setZoom, toggleSnapping,
@@ -14,11 +14,12 @@ import { openExportModal, closeExportModal, applyExportPreset, checkCodecSupport
 
 function openDb() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('vegas-web', 2);
+    const req = indexedDB.open('vegas-web', 3);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
       if (!db.objectStoreNames.contains('projects')) db.createObjectStore('projects', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('handles')) db.createObjectStore('handles');
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -95,6 +96,56 @@ function listProjects(db) {
     req.onsuccess = () => resolve(req.result || []);
     req.onerror = () => reject(req.error);
   });
+}
+
+function idbGet(db, store, key) {
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(store, 'readonly').objectStore(store).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function idbPut(db, store, value, key) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    tx.objectStore(store).put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function saveFileHandle(asset) {
+  if (!asset?.handle || !asset.fileKey) return;
+  const db = await openDb();
+  await idbPut(db, 'handles', asset.handle, asset.fileKey);
+  if (asset.name) await idbPut(db, 'handles', asset.handle, `name:${asset.name.toLowerCase()}`);
+  db.close();
+}
+
+async function findFileHandle(rec) {
+  const keys = [];
+  if (rec.fileKey) keys.push(rec.fileKey);
+  if (rec.name && rec.size && rec.lastModified) {
+    keys.push(fileKey({ name: rec.name, size: rec.size, lastModified: rec.lastModified }));
+  }
+  if (rec.name) keys.push(`name:${rec.name.toLowerCase()}`);
+  const db = await openDb();
+  let handle = null;
+  for (const key of keys) {
+    const stored = await idbGet(db, 'handles', key);
+    if (stored?.getFile) { handle = stored; break; }
+  }
+  db.close();
+  if (!handle) return null;
+  try {
+    const perm = await handle.queryPermission({ mode: 'read' });
+    if (perm === 'granted') return { handle, file: await handle.getFile() };
+    if (perm === 'prompt') return { handle };
+  } catch (err) {
+    console.warn(err);
+  }
+  return null;
 }
 
 function putProject(db, record) {
@@ -236,7 +287,9 @@ function askRelink(missing) {
     list.replaceChildren();
     const note = document.createElement('p');
     note.className = 'px-3 py-2 text-slate-300';
-    note.textContent = 'La URL guardada ya no abre estos archivos. Elegí los mismos de nuevo. El proyecto no copia los videos.';
+    note.textContent = savedOnThisComputer(missing)
+      ? 'Estos archivos ya se abrieron en esta computadora. Confirmá el permiso y se vuelven a abrir sin copiarlos.'
+      : 'Elegí los mismos archivos. En Chrome queda guardado el permiso de esta computadora, sin copiar los videos.';
     const names = document.createElement('ul');
     names.className = 'px-5 pb-2 list-disc text-slate-400';
     for (const rec of missing) {
@@ -246,34 +299,68 @@ function askRelink(missing) {
     }
     const row = document.createElement('div');
     row.className = 'flex justify-end gap-2 px-2 py-2';
-    const pick = document.createElement('label');
-    pick.className = 'px-3 py-1.5 rounded bg-cyan-500 text-slate-950 font-bold cursor-pointer';
+    const pick = document.createElement('button');
+    pick.type = 'button';
+    pick.className = 'px-3 py-1.5 rounded bg-vegas-border hover:bg-slate-700 text-slate-100 font-bold';
     pick.textContent = 'Elegir archivos';
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.multiple = true;
-    input.accept = 'video/*,audio/*,image/*';
-    input.className = 'hidden';
-    pick.appendChild(input);
     const skip = document.createElement('button');
     skip.type = 'button';
     skip.className = 'px-3 py-1.5 text-slate-400 hover:text-white';
     skip.textContent = 'Seguir sin ellos';
     row.append(skip, pick);
+    const saved = missing.filter(rec => rec.handle);
+    if (saved.length) {
+      const allow = document.createElement('button');
+      allow.type = 'button';
+      allow.className = 'px-3 py-1.5 rounded bg-cyan-500 text-slate-950 font-bold';
+      allow.textContent = 'Abrir los de esta computadora';
+      row.append(allow);
+      allow.onclick = async () => {
+        allow.disabled = true;
+        const entries = [];
+        for (const rec of saved) {
+          try {
+            if (await rec.handle.requestPermission({ mode: 'read' }) !== 'granted') continue;
+            entries.push({ id: rec.id, file: await rec.handle.getFile(), handle: rec.handle });
+          } catch (err) {
+            console.warn(err);
+          }
+        }
+        finish(entries);
+      };
+    }
     list.append(note, names, row);
     showBox('library-modal');
     const close = document.getElementById('library-close');
     const finish = (files) => {
       hideBox('library-modal');
       close.onclick = null;
-      input.onchange = null;
       skip.onclick = null;
       resolve(files);
     };
-    input.onchange = () => finish([...input.files]);
+    pick.onclick = async () => {
+      if (window.showOpenFilePicker) {
+        try {
+          finish(await pickWithHandles() || []);
+        } catch (err) {
+          if (err?.name !== 'AbortError') console.warn(err);
+        }
+        return;
+      }
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.multiple = true;
+      input.accept = 'video/*,audio/*,image/*';
+      input.onchange = () => finish([...input.files].map(file => ({ file })));
+      input.click();
+    };
     skip.onclick = () => finish([]);
     close.onclick = () => finish([]);
   });
+}
+
+function savedOnThisComputer(missing) {
+  return missing.some(rec => rec.handle);
 }
 
 function pickProject(projects) {
@@ -469,6 +556,15 @@ function bindUi() {
     importFiles(e.target.files);
     e.target.value = '';
   });
+  document.querySelector('label[title="Importar video, audio o imagen"]')?.addEventListener('click', (e) => {
+    if (!window.showOpenFilePicker) return;
+    e.preventDefault();
+    pickWithHandles().then(entries => {
+      if (entries?.length) importEntries(entries);
+    }).catch(err => {
+      if (err?.name !== 'AbortError') console.warn(err);
+    });
+  });
   document.getElementById('btn-undo').addEventListener('click', () => {
     if (!undo()) return;
     renderTimeline();
@@ -635,6 +731,7 @@ function scheduleAutosave() {
 }
 
 function boot() {
+  setFileHooks({ remember: saveFileHandle, lookup: findFileHandle });
   initPreview();
   syncProjectInputs();
   setFirstVideoHandler(offerProjectMatch);
