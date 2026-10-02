@@ -275,16 +275,30 @@ export function toggleMute(trackId) {
   commitPlayback();
 }
 
+const ZOOM_MIN = 0.25;
+const ZOOM_MAX = 8000;
+
+export function sliderToZoom(t) {
+  const u = Math.min(1, Math.max(0, Number(t) / 100));
+  return ZOOM_MIN * Math.pow(ZOOM_MAX / ZOOM_MIN, u);
+}
+
+export function zoomToSlider(z) {
+  const zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Number(z) || ZOOM_MIN));
+  const u = Math.log(zoom / ZOOM_MIN) / Math.log(ZOOM_MAX / ZOOM_MIN);
+  return String(Math.round(Math.min(1, Math.max(0, u)) * 100));
+}
+
 export function setZoom(value) {
   const el = document.getElementById('timeline-scroll-container');
   const old = state.zoom;
   const anchor = el ? state.currentTime * old - el.scrollLeft : 0;
-  state.zoom = Math.min(200, Math.max(0.25, Number(value) || 40));
+  state.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Number(value) || 40));
   ensureSpan();
   renderTimeline();
   if (el) el.scrollLeft = Math.max(0, state.currentTime * state.zoom - anchor);
   const slider = document.getElementById('zoom-slider');
-  if (slider && document.activeElement !== slider) slider.value = String(Math.round(state.zoom));
+  if (slider && document.activeElement !== slider) slider.value = zoomToSlider(state.zoom);
 }
 
 export function zoomToFit() {
@@ -332,6 +346,50 @@ function makeHandle(className, handle, title) {
   return el;
 }
 
+function nearestFrame(asset, time) {
+  const frames = asset?.thumbnails;
+  const times = asset?.thumbTimes;
+  if (!frames?.length) return '';
+  if (!times?.length || times.length !== frames.length) return frames[0];
+  let best = 0;
+  let diff = Infinity;
+  for (let i = 0; i < times.length; i++) {
+    const d = Math.abs(times[i] - time);
+    if (d < diff || (d === diff && times[i] < times[best])) {
+      diff = d;
+      best = i;
+    }
+  }
+  return frames[best];
+}
+
+function placeFilmstrip(bg, clip, asset) {
+  const height = bg.clientHeight || 56;
+  const aspect = asset.width > 0 && asset.height > 0 ? asset.width / asset.height : 16 / 9;
+  let thumbW = Math.max(16, height * aspect);
+  const clipW = Math.max(4, clip.duration * state.zoom);
+  let count = Math.max(1, Math.ceil(clipW / thumbW));
+  // ponytail: 40 nodes per clip; wider slots still cover the clip. Raise the cap for a denser strip.
+  if (count > 40) {
+    count = 40;
+    thumbW = clipW / count;
+  }
+  const slot = thumbW / state.zoom;
+  const start = clip.startOffset || 0;
+  bg.replaceChildren();
+  for (let i = 0; i < count; i++) {
+    const src = nearestFrame(asset, start + i * slot);
+    if (!src) continue;
+    const img = document.createElement('img');
+    img.src = src;
+    img.alt = '';
+    img.draggable = false;
+    img.className = 'h-full flex-none max-w-none object-cover pointer-events-none';
+    img.style.width = `${thumbW}px`;
+    bg.appendChild(img);
+  }
+}
+
 function placeWaveform(img, clip, asset) {
   const total = Math.max(0.05, asset?.duration || clip.duration);
   const offset = Math.max(0, clip.startOffset || 0);
@@ -371,14 +429,8 @@ function buildClip(clip) {
     img.className = 'w-full h-full object-contain';
     bg.appendChild(img);
   } else if (clip.type !== 'audio' && asset?.thumbnails?.length) {
-    for (const src of asset.thumbnails) {
-      const img = document.createElement('img');
-      img.src = src;
-      img.alt = '';
-      img.className = 'h-full w-auto flex-none max-w-none';
-      img.style.aspectRatio = '16 / 9';
-      bg.appendChild(img);
-    }
+    bg.dataset.film = '1';
+    placeFilmstrip(bg, clip, asset);
   }
   el.appendChild(bg);
 
@@ -568,7 +620,10 @@ function layoutClip(clip) {
   if (handleIn) handleIn.style.left = `${Math.max(0, (clip.fadeIn || 0) * state.zoom)}px`;
   if (handleOut) handleOut.style.right = `${Math.max(0, (clip.fadeOut || 0) * state.zoom)}px`;
   const wave = el.querySelector('[data-wave]');
-  if (wave) placeWaveform(wave, clip, assetById(clip.assetId));
+  const asset = assetById(clip.assetId);
+  if (wave) placeWaveform(wave, clip, asset);
+  const film = el.querySelector('[data-film]');
+  if (film && asset?.thumbnails?.length) placeFilmstrip(film, clip, asset);
 }
 
 function startTrim(e, clip, handle) {
@@ -794,8 +849,16 @@ export function bindTimeline() {
   const scroller = document.getElementById('timeline-scroll-container');
   scroller.addEventListener('scroll', onTimelineScroll);
   scroller.parentElement.addEventListener('wheel', (e) => {
-    if (!e.shiftKey) return;
     e.preventDefault();
+    if (e.ctrlKey) {
+      scroller.scrollTop += e.deltaY;
+      return;
+    }
+    if (e.shiftKey) {
+      const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+      scroller.scrollLeft += delta;
+      return;
+    }
     const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
     const factor = delta > 0 ? 1 / 1.12 : 1.12;
     setZoom(state.zoom * factor);
@@ -875,7 +938,56 @@ export function splitSelected() {
   commitPlayback();
 }
 
-export function deleteSelected(ripple = true) {
+function applyTrim(clip, edge, time) {
+  const originStart = clip.startTime;
+  const originDur = clip.duration;
+  const originOffset = clip.startOffset || 0;
+  const end = originStart + originDur;
+  if (edge === 'start') {
+    if (time >= end - 0.2) return false;
+    let used = time - originStart;
+    if (used < -originOffset) used = -originOffset;
+    if (originDur - used < 0.2) used = originDur - 0.2;
+    if (originStart + used < 0) used = -originStart;
+    clip.startTime = originStart + used;
+    clip.duration = originDur - used;
+    clip.startOffset = originOffset + used;
+  } else {
+    if (time <= originStart + 0.2) return false;
+    clip.duration = Math.max(0.2, Math.min(time - originStart, maxDuration(clip, originOffset)));
+  }
+  return clip.startTime !== originStart || clip.duration !== originDur || (clip.startOffset || 0) !== originOffset;
+}
+
+function syncPartnerTrim(clip, partner, originStart, originDur, originOffset, partnerStart, partnerDur, partnerOffset) {
+  if (!partner) return;
+  const dStart = clip.startTime - originStart;
+  const dDur = clip.duration - originDur;
+  const dOff = (clip.startOffset || 0) - originOffset;
+  partner.startTime = Math.max(0, partnerStart + dStart);
+  partner.duration = Math.max(0.2, partnerDur + dDur);
+  partner.startOffset = Math.max(0, partnerOffset + dOff);
+}
+
+export function trimToCursor(edge) {
+  const clip = selectedClip();
+  if (!clip) return;
+  const originStart = clip.startTime;
+  const originDur = clip.duration;
+  const originOffset = clip.startOffset || 0;
+  const partner = partnerOf(clip);
+  const partnerStart = partner ? partner.startTime : 0;
+  const partnerDur = partner ? partner.duration : 0;
+  const partnerOffset = partner ? (partner.startOffset || 0) : 0;
+  if (!applyTrim(clip, edge, state.currentTime)) return;
+  syncPartnerTrim(clip, partner, originStart, originDur, originOffset, partnerStart, partnerDur, partnerOffset);
+  pushHistory();
+  renderTimeline();
+  commitPlayback();
+  notify();
+}
+
+export function deleteSelected(ripple = state.autoRipple) {
   const clip = selectedClip();
   if (!clip) return;
   const victims = [clip];
@@ -904,12 +1016,23 @@ export function deleteSelected(ripple = true) {
 
 let clipClipboard = null;
 
-export function copySelected() {
+function rememberSelected() {
   const clip = selectedClip();
-  if (!clip) return;
+  if (!clip) return false;
   const partner = partnerOf(clip);
   clipClipboard = JSON.parse(JSON.stringify(partner ? [clip, partner] : [clip]));
+  return true;
+}
+
+export function copySelected() {
+  if (!rememberSelected()) return;
   flash('Clip copied');
+}
+
+export function cutSelected() {
+  if (!rememberSelected()) return;
+  deleteSelected();
+  flash('Clip cut');
 }
 
 export function pasteClipboard() {

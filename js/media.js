@@ -5,15 +5,19 @@ let onReady = () => {};
 let onInsert = () => {};
 let rememberHandle = async () => {};
 let lookupHandle = async () => null;
+let loadThumbs = async () => null;
+let saveThumbs = async () => {};
 
 export function setMediaHooks({ ready, insert }) {
   if (ready) onReady = ready;
   if (insert) onInsert = insert;
 }
 
-export function setFileHooks({ remember, lookup }) {
+export function setFileHooks({ remember, lookup, loadThumbs: load, saveThumbs: save }) {
   if (remember) rememberHandle = remember;
   if (lookup) lookupHandle = lookup;
+  if (load) loadThumbs = load;
+  if (save) saveThumbs = save;
 }
 
 export function fileKey(file) {
@@ -120,7 +124,8 @@ async function mountAsset(source) {
     mediaSource: null,
     elementGain: null,
     waveform: '',
-    thumbnails: []
+    thumbnails: [],
+    thumbTimes: []
   };
   try {
     if (type === 'video') {
@@ -307,8 +312,34 @@ async function decodeAudio(asset) {
   }
 }
 
+function thumbSampleTimes(duration) {
+  const span = Math.max(0, duration || 0);
+  const interval = Math.max(0.5, span / 120);
+  const end = Math.max(0, span - 0.05);
+  const times = [0];
+  for (let t = interval; t < end; t += interval) times.push(t);
+  return times;
+}
+
+function thumbCacheOk(cached) {
+  return cached?.v === 1
+    && Array.isArray(cached.frames) && cached.frames.length > 0
+    && Array.isArray(cached.times) && cached.times.length === cached.frames.length;
+}
+
 async function makeThumbs(asset) {
   if (!state.mediaPool.includes(asset) || asset.type !== 'video') return;
+  try {
+    const cached = asset.fileKey ? await loadThumbs(asset.fileKey) : null;
+    if (thumbCacheOk(cached) && state.mediaPool.includes(asset)) {
+      asset.thumbnails = cached.frames;
+      asset.thumbTimes = cached.times;
+      return;
+    }
+  } catch (err) {
+    console.warn('thumbnails', err);
+  }
+  if (!state.mediaPool.includes(asset)) return;
   const video = document.createElement('video');
   video.muted = true;
   video.playsInline = true;
@@ -322,20 +353,25 @@ async function makeThumbs(asset) {
     canvas.width = 160;
     canvas.height = 90;
     const ctx = canvas.getContext('2d');
-    const thumbs = [];
-    const count = 6;
-    for (let i = 0; i < count; i++) {
-      const t = Math.min(asset.duration * (i + 0.5) / count, Math.max(0, asset.duration - 0.05));
+    const frames = [];
+    const times = [];
+    for (const t of thumbSampleTimes(asset.duration)) {
       await seekMedia(video, t, 800);
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       try {
         if (drawContain(ctx, video, canvas.width, canvas.height)) {
-          thumbs.push(canvas.toDataURL('image/jpeg', 0.7));
+          frames.push(canvas.toDataURL('image/jpeg', 0.7));
+          times.push(t);
         }
       } catch { /* frame not ready */ }
     }
-    if (state.mediaPool.includes(asset)) asset.thumbnails = thumbs;
+    if (!state.mediaPool.includes(asset)) return;
+    asset.thumbnails = frames;
+    asset.thumbTimes = times;
+    if (asset.fileKey && frames.length) {
+      try { await saveThumbs(asset.fileKey, { v: 1, times, frames }); } catch (err) { console.warn('thumbnails', err); }
+    }
   } catch (err) {
     console.warn('thumbnails', err);
   } finally {
@@ -461,6 +497,8 @@ export async function openMedia(records) {
       }
       if (rec.url && !rec.url.startsWith('blob:') && await urlAlive(rec.url)) {
         const asset = await loadFromRecord(rec);
+        if (rec.fileKey) asset.fileKey = rec.fileKey;
+        if (rec.lastModified) asset.lastModified = rec.lastModified;
         state.mediaPool.push(asset);
         warm(asset);
         continue;

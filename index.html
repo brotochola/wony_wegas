@@ -65,6 +65,13 @@
       <button type="button" id="btn-open-json" class="p-1.5 text-slate-400 hover:text-cyan-400" title="Open JSON session">
         <i class="fa-solid fa-file-arrow-up text-sm"></i>
       </button>
+      <div class="h-4 w-px bg-vegas-border"></div>
+      <button type="button" id="btn-options" class="p-1.5 text-slate-400 hover:text-cyan-400" title="Options">
+        <i class="fa-solid fa-gear text-sm"></i>
+      </button>
+      <button type="button" id="btn-help" class="p-1.5 text-slate-400 hover:text-cyan-400" title="Shortcuts (F1)">
+        <i class="fa-solid fa-circle-question text-sm"></i>
+      </button>
       <input type="file" id="json-input" accept="application/json,.json" class="hidden">
       <button type="button" id="btn-export" class="ml-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs px-4 py-1.5 rounded flex items-center gap-1.5 shadow-lg shadow-cyan-500/20">
         <i class="fa-solid fa-film"></i>
@@ -317,12 +324,12 @@
           <i class="fa-solid fa-scissors text-cyan-400"></i>
           <span>Split (S)</span>
         </button>
-        <button type="button" id="btn-delete" class="bg-vegas-border hover:bg-red-900/40 text-slate-200 px-2.5 py-1 rounded flex items-center gap-1" title="Delete and close the gap (Delete). Shift+Delete leaves the gap">
+        <button type="button" id="btn-delete" class="bg-vegas-border hover:bg-red-900/40 text-slate-200 px-2.5 py-1 rounded flex items-center gap-1" title="Delete and close the gap (Delete). Ctrl+L toggles auto ripple">
           <i class="fa-solid fa-trash-can text-red-400"></i>
           <span>Delete</span>
         </button>
         <div class="h-4 w-px bg-vegas-border"></div>
-        <button type="button" id="btn-snap" title="Snap the clip to cuts, the playhead, and the start" class="bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 px-2 py-1 rounded flex items-center gap-1">
+        <button type="button" id="btn-snap" title="Snap to cuts, the playhead, and the start (F8)" class="bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 px-2 py-1 rounded flex items-center gap-1">
           <i class="fa-solid fa-magnet text-xs"></i>
           <span>Magnetic Snap</span>
         </button>
@@ -337,7 +344,7 @@
         <div class="h-4 w-px bg-vegas-border"></div>
         <div class="flex items-center space-x-1">
           <i class="fa-solid fa-magnifying-glass-minus text-slate-400"></i>
-          <input type="range" min="1" max="200" value="40" id="zoom-slider" class="w-20 accent-cyan-400" title="Zoom. Shift + wheel zooms around the playhead. F fits the project">
+          <input type="range" min="0" max="100" value="49" id="zoom-slider" class="w-20 accent-cyan-400" title="Zoom. Wheel zooms. Up and Down zoom. Alt+Up fits one frame per thumbnail">
           <i class="fa-solid fa-magnifying-glass-plus text-slate-400"></i>
         </div>
       </div>
@@ -478,23 +485,79 @@
   </div>
 
   <div id="help-modal" class="fixed inset-0 bg-slate-950/80 z-[60] hidden items-center justify-center p-4">
+    <div class="help-panel">
+      <div class="help-head">
+        <div>
+          <h2>Shortcuts</h2>
+          <p>They work when you are not typing in a field.</p>
+        </div>
+        <button type="button" id="help-close" class="text-slate-400 hover:text-white" title="Close"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="help-body">
+        <div>
+        <section>
+          <h3>Playback</h3>
+          <div class="help-row"><div class="help-keys"><kbd>Space</kbd><span>or</span><kbd>Enter</kbd></div><p>Play or pause</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Esc</kbd></div><p>Stop</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Shift</kbd><kbd>Space</kbd></div><p>Play from the start</p></div>
+        </section>
+        <section>
+          <h3>Move</h3>
+          <div class="help-row"><div class="help-keys"><kbd>Alt</kbd><kbd>Left</kbd><span>/</span><kbd>Right</kbd></div><p>One frame</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Left</kbd><span>/</span><kbd>Right</kbd></div><p>One timeline pixel</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Home</kbd><span>/</span><kbd>End</kbd></div><p>Visible edge of the timeline</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Ctrl</kbd><kbd>Home</kbd><span>or</span><kbd>W</kbd></div><p>Start of the project</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Ctrl</kbd><kbd>End</kbd></div><p>End of the project</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Ctrl</kbd><kbd>[</kbd><span>/</span><kbd>]</kbd></div><p>Playhead to the selected clip edges</p></div>
+        </section>
+        <section>
+          <h3>Zoom</h3>
+          <div class="help-row"><div class="help-keys"><kbd>Up</kbd><span>/</span><kbd>Down</kbd></div><p>Zoom in or out</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Ctrl</kbd><kbd>Up</kbd><span>/</span><kbd>Down</kbd></div><p>Zoom faster</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Alt</kbd><kbd>Up</kbd></div><p>One frame per thumbnail</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Wheel</kbd></div><p>Zoom</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Shift</kbd><kbd>Wheel</kbd></div><p>Scroll sideways</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Ctrl</kbd><kbd>Wheel</kbd></div><p>Scroll the tracks</p></div>
+        </section>
+        </div>
+        <div>
+        <section>
+          <h3>Edit</h3>
+          <div class="help-row"><div class="help-keys"><kbd>S</kbd></div><p>Split at the playhead</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Delete</kbd></div><p>Delete. Closes the gap when auto ripple is on</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Ctrl</kbd><kbd>X</kbd><span>or</span><kbd>Shift</kbd><kbd>Delete</kbd></div><p>Cut</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Ctrl</kbd><kbd>C</kbd><span>/</span><kbd>V</kbd></div><p>Copy and paste</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Ctrl</kbd><kbd>Z</kbd></div><p>Undo</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Ctrl</kbd><kbd>Y</kbd><span>or</span><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Z</kbd></div><p>Redo</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>I</kbd><span>/</span><kbd>O</kbd></div><p>Set in and out points</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Alt</kbd><kbd>I</kbd></div><p>Clear in and out points</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Alt</kbd><kbd>[</kbd><span>/</span><kbd>]</kbd></div><p>Trim the clip start or end to the playhead</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>F8</kbd></div><p>Snapping</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Ctrl</kbd><kbd>L</kbd></div><p>Auto ripple</p></div>
+        </section>
+        <section>
+          <h3>Project</h3>
+          <div class="help-row"><div class="help-keys"><kbd>Ctrl</kbd><kbd>S</kbd></div><p>Save</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Ctrl</kbd><kbd>O</kbd></div><p>Open</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Ctrl</kbd><kbd>Q</kbd></div><p>New audio track</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Q</kbd></div><p>New video track</p></div>
+          <div class="help-row"><div class="help-keys"><kbd>F1</kbd><span>or</span><kbd>?</kbd></div><p>This list</p></div>
+        </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="options-modal" class="fixed inset-0 bg-slate-950/80 z-[60] hidden items-center justify-center p-4">
     <div class="bg-vegas-panel border border-vegas-border w-full max-w-md rounded-lg shadow-2xl p-4 text-xs">
       <div class="flex items-center justify-between mb-3">
-        <span class="font-bold text-cyan-400">Wony Wegas Shortcuts</span>
-        <button type="button" id="help-close" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+        <span class="font-bold text-cyan-400">Options</span>
+        <button type="button" id="options-close" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
       </div>
-      <ul class="space-y-1 text-slate-300">
-        <li>Space: play or pause</li>
-        <li>Arrows: one frame. Shift + arrow: one second</li>
-        <li>S: split at the playhead</li>
-        <li>Delete: delete and close the gap. Shift + Delete: leave the gap</li>
-        <li>Ctrl + Z / Ctrl + Y: undo and redo</li>
-        <li>Ctrl + C / Ctrl + V: copy and paste the clip</li>
-        <li>I / O: set in and out points. Alt + I: clear them</li>
-        <li>+ / −: zoom. F: fit the project</li>
-        <li>Double-click a file: add it at the end</li>
-        <li>?: this list</li>
-      </ul>
+      <label class="flex items-start gap-2 text-slate-300 cursor-pointer">
+        <input type="checkbox" id="opt-ripple" class="mt-0.5 accent-cyan-400" checked>
+        <span>When deleting a clip, pull the following clips to the left</span>
+      </label>
     </div>
   </div>
 

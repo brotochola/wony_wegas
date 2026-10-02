@@ -3,9 +3,9 @@ import {
   importFiles, importEntries, bindMediaDrop, setMediaHooks, setFileHooks, openMedia, attachFiles, removeUnused, poolRecords, renderMediaPool, pickWithHandles, fileKey
 } from './media.js';
 import {
-  bindTimeline, renderTimeline, addTrack, addTextClip, setZoom, toggleSnapping,
+  bindTimeline, renderTimeline, addTrack, addTextClip, setZoom, sliderToZoom, zoomToSlider, toggleSnapping,
   splitSelected, deleteSelected, duplicateSelected, unlinkSelected, insertAsset, setFirstVideoHandler,
-  copySelected, pasteClipboard, setInPoint, setOutPoint, clearPoints, zoomToFit
+  copySelected, cutSelected, pasteClipboard, setInPoint, setOutPoint, clearPoints, trimToCursor
 } from './timeline.js';
 import {
   initPreview, resizePreview, setSpanListener, togglePlay, seekToStart, seekToEnd, seek, stopPlaying, previewNow, measureFps, syncTransformBox
@@ -14,12 +14,13 @@ import { openExportModal, closeExportModal, applyExportPreset, checkCodecSupport
 
 function openDb() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('vegas-web', 3);
+    const req = indexedDB.open('vegas-web', 4);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
       if (!db.objectStoreNames.contains('projects')) db.createObjectStore('projects', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('handles')) db.createObjectStore('handles');
+      if (!db.objectStoreNames.contains('thumbs')) db.createObjectStore('thumbs');
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -113,6 +114,21 @@ function idbPut(db, store, value, key) {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
+}
+
+async function loadThumbCache(key) {
+  if (!key) return null;
+  const db = await openDb();
+  const value = await idbGet(db, 'thumbs', key);
+  db.close();
+  return value || null;
+}
+
+async function saveThumbCache(key, value) {
+  if (!key) return;
+  const db = await openDb();
+  await idbPut(db, 'thumbs', value, key);
+  db.close();
 }
 
 async function saveFileHandle(asset) {
@@ -614,6 +630,11 @@ function bindUi() {
   document.getElementById('preset-916').addEventListener('click', () => applyProject(1080, 1920, state.fps));
   document.getElementById('preset-11').addEventListener('click', () => applyProject(1080, 1080, state.fps));
   document.getElementById('help-close').addEventListener('click', () => hideBox('help-modal'));
+  document.getElementById('btn-help').addEventListener('click', toggleHelp);
+  document.getElementById('btn-options').addEventListener('click', toggleOptions);
+  document.getElementById('options-close').addEventListener('click', () => hideBox('options-modal'));
+  document.getElementById('opt-ripple').addEventListener('change', (e) => setAutoRipple(e.target.checked, true));
+  syncRippleUi();
   document.addEventListener('project-dirty', scheduleAutosave);
   document.getElementById('tab-btn-media').addEventListener('click', () => switchTab('media'));
   document.getElementById('tab-btn-titles').addEventListener('click', () => switchTab('titles'));
@@ -622,15 +643,17 @@ function bindUi() {
   document.getElementById('btn-seek-start').addEventListener('click', seekToStart);
   document.getElementById('btn-seek-end').addEventListener('click', seekToEnd);
   document.getElementById('btn-split').addEventListener('click', splitSelected);
-  document.getElementById('btn-delete').addEventListener('click', deleteSelected);
+  document.getElementById('btn-delete').addEventListener('click', () => deleteSelected());
   document.getElementById('btn-snap').addEventListener('click', toggleSnapping);
   document.getElementById('btn-add-video').addEventListener('click', () => addTrack('video'));
   document.getElementById('btn-add-audio').addEventListener('click', () => addTrack('audio'));
-  document.getElementById('zoom-slider').addEventListener('input', (e) => setZoom(e.target.value));
+  const zoomSlider = document.getElementById('zoom-slider');
+  zoomSlider.value = zoomToSlider(state.zoom);
+  zoomSlider.addEventListener('input', (e) => setZoom(sliderToZoom(e.target.value)));
   document.getElementById('ctx-split').addEventListener('click', splitSelected);
   document.getElementById('ctx-unlink').addEventListener('click', unlinkSelected);
   document.getElementById('ctx-duplicate').addEventListener('click', duplicateSelected);
-  document.getElementById('ctx-delete').addEventListener('click', deleteSelected);
+  document.getElementById('ctx-delete').addEventListener('click', () => deleteSelected());
 
   for (const id of ['insp-name', 'insp-start', 'insp-duration', 'insp-fade-in', 'insp-fade-out', 'insp-x', 'insp-y', 'insp-crop-l', 'insp-crop-r', 'insp-crop-t', 'insp-crop-b', 'insp-font-size', 'insp-font', 'insp-stroke', 'insp-stroke-color']) {
     document.getElementById(id).addEventListener('change', () => applyInspector(true));
@@ -642,38 +665,134 @@ function bindUi() {
   }
 
   document.addEventListener('clip-selected', updateInspector);
-  document.addEventListener('keydown', (e) => {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
-    if (['help-modal', 'export-modal', 'library-modal', 'ask-modal'].some(id => !document.getElementById(id)?.classList.contains('hidden'))) return;
-    if (e.repeat && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-    const frame = 1 / (state.fps || 30);
-    if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
-    else if (e.key === 'ArrowRight') { e.preventDefault(); seek(state.currentTime + (e.shiftKey ? 1 : frame)); }
-    else if (e.key === 'ArrowLeft') { e.preventDefault(); seek(state.currentTime - (e.shiftKey ? 1 : frame)); }
-    else if (!e.ctrlKey && !e.metaKey && (e.key === 's' || e.key === 'S')) splitSelected();
-    else if ((e.key === 'Delete' || e.key === 'Backspace') && e.shiftKey) { e.preventDefault(); deleteSelected(false); }
-    else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(true); }
-    else if (e.ctrlKey && e.key.toLowerCase() === 'c') { e.preventDefault(); copySelected(); }
-    else if (e.ctrlKey && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteClipboard(); }
-    else if (e.altKey && (e.key === 'i' || e.key === 'I')) clearPoints();
-    else if (e.key === 'i' || e.key === 'I') setInPoint();
-    else if (e.key === 'o' || e.key === 'O') setOutPoint();
-    else if (!e.ctrlKey && (e.key === 'f' || e.key === 'F')) zoomToFit();
-    else if (!e.ctrlKey && (e.key === '+' || e.key === '=')) { e.preventDefault(); setZoom(state.zoom * 1.15); }
-    else if (!e.ctrlKey && (e.key === '-' || e.key === '_')) { e.preventDefault(); setZoom(state.zoom / 1.15); }
-    else if (e.key === '?' || (e.shiftKey && e.code === 'Slash')) toggleHelp();
-    else if (e.ctrlKey && e.key === 'z') { e.preventDefault(); document.getElementById('btn-undo').click(); }
-    else if (e.ctrlKey && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) {
-      e.preventDefault();
-      document.getElementById('btn-redo').click();
-    }
-  });
+  document.addEventListener('keydown', onKeyDown);
+}
+
+const OPT_KEY = 'vegas-web-options';
+
+function loadOptions() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(OPT_KEY) || 'null');
+    if (saved && typeof saved.autoRipple === 'boolean') state.autoRipple = saved.autoRipple;
+  } catch { /* keep the default */ }
+}
+
+function saveOptions() {
+  localStorage.setItem(OPT_KEY, JSON.stringify({ autoRipple: !!state.autoRipple }));
+}
+
+function syncRippleUi() {
+  const box = document.getElementById('opt-ripple');
+  if (box) box.checked = !!state.autoRipple;
+  const del = document.getElementById('btn-delete');
+  if (del) {
+    del.title = state.autoRipple
+      ? 'Delete and close the gap (Delete). Ctrl+L toggles auto ripple'
+      : 'Delete and leave the gap (Delete). Ctrl+L toggles auto ripple';
+  }
+}
+
+function setAutoRipple(on, announce = false) {
+  state.autoRipple = !!on;
+  saveOptions();
+  syncRippleUi();
+  if (announce) flash(state.autoRipple ? 'Auto ripple on' : 'Auto ripple off');
 }
 
 function toggleHelp() {
   const modal = document.getElementById('help-modal');
   if (modal.classList.contains('hidden')) showBox('help-modal');
   else hideBox('help-modal');
+}
+
+function toggleOptions() {
+  const modal = document.getElementById('options-modal');
+  if (modal.classList.contains('hidden')) {
+    syncRippleUi();
+    showBox('options-modal');
+  } else hideBox('options-modal');
+}
+
+function seekViewEdge(edge) {
+  const el = document.getElementById('timeline-scroll-container');
+  if (!el) return;
+  const time = edge === 'start' ? el.scrollLeft / state.zoom : (el.scrollLeft + el.clientWidth) / state.zoom;
+  seek(time);
+}
+
+function seekClipEdge(edge) {
+  const clip = state.clips.find(item => item.id === state.selectedClipId);
+  if (!clip) return;
+  seek(edge === 'start' ? clip.startTime : clip.startTime + clip.duration);
+}
+
+function letter(e) {
+  if (e.code?.startsWith('Key') && e.code.length === 4) return e.code.slice(3).toLowerCase();
+  return (e.key || '').toLowerCase();
+}
+
+function bracketEdge(e) {
+  if (e.key === '[') return 'start';
+  if (e.key === ']') return 'end';
+  if (e.code === 'BracketLeft') return 'start';
+  if (e.code === 'BracketRight') return 'end';
+  return '';
+}
+
+function onKeyDown(e) {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+  if (['help-modal', 'options-modal', 'export-modal', 'library-modal', 'ask-modal'].some(id => !document.getElementById(id)?.classList.contains('hidden'))) return;
+  if (e.repeat && !e.key.startsWith('Arrow')) return;
+  const cmd = e.ctrlKey || e.metaKey;
+  const key = letter(e);
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (e.shiftKey) {
+      const was = state.isPlaying;
+      seek(0);
+      if (!was) togglePlay();
+    } else togglePlay();
+  } else if (e.key === 'Enter') { e.preventDefault(); togglePlay(); }
+  else if (e.key === 'Escape') { e.preventDefault(); stopPlaying(); }
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    e.preventDefault();
+    const dir = e.key === 'ArrowRight' ? 1 : -1;
+    const step = e.altKey ? 1 / (state.fps || 30) : 1 / state.zoom;
+    seek(state.currentTime + dir * step);
+  } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (e.altKey && e.key === 'ArrowUp') setZoom(100 * (state.fps || 30));
+    else if (!e.altKey) {
+      const factor = cmd ? 2 : 1.15;
+      setZoom(state.zoom * (e.key === 'ArrowUp' ? factor : 1 / factor));
+    }
+  } else if (e.key === 'Home') { e.preventDefault(); if (cmd) seekToStart(); else seekViewEdge('start'); }
+  else if (e.key === 'End') { e.preventDefault(); if (cmd) seekToEnd(); else seekViewEdge('end'); }
+  else if (!cmd && !e.altKey && !e.shiftKey && key === 'w') { e.preventDefault(); seekToStart(); }
+  else if (!cmd && !e.altKey && !e.shiftKey && key === 's') splitSelected();
+  else if (cmd && !e.shiftKey && !e.altKey && key === 's') { e.preventDefault(); saveProject(); }
+  else if (cmd && !e.shiftKey && !e.altKey && key === 'o') { e.preventDefault(); loadProject(); }
+  else if ((e.key === 'Delete' && e.shiftKey) || (cmd && !e.altKey && key === 'x')) { e.preventDefault(); cutSelected(); }
+  else if (e.key === 'Delete') { e.preventDefault(); deleteSelected(); }
+  else if (cmd && !e.altKey && !e.shiftKey && key === 'c') { e.preventDefault(); copySelected(); }
+  else if (cmd && !e.altKey && !e.shiftKey && key === 'v') { e.preventDefault(); pasteClipboard(); }
+  else if (cmd && !e.altKey && !e.shiftKey && key === 'z') { e.preventDefault(); document.getElementById('btn-undo').click(); }
+  else if (cmd && !e.altKey && (key === 'y' || (e.shiftKey && key === 'z'))) { e.preventDefault(); document.getElementById('btn-redo').click(); }
+  else if (e.altKey && !cmd && key === 'i') { e.preventDefault(); clearPoints(); }
+  else if (!cmd && !e.altKey && !e.shiftKey && key === 'i') setInPoint();
+  else if (!cmd && !e.altKey && !e.shiftKey && key === 'o') setOutPoint();
+  else if (e.key === 'F8') { e.preventDefault(); toggleSnapping(); }
+  else if (cmd && !e.shiftKey && !e.altKey && key === 'l') { e.preventDefault(); setAutoRipple(!state.autoRipple, true); }
+  else if (cmd && e.shiftKey && !e.altKey && key === 'q') { e.preventDefault(); addTrack('video'); }
+  else if (cmd && !e.shiftKey && !e.altKey && key === 'q') { e.preventDefault(); addTrack('audio'); }
+  else if (e.key === 'F1' || e.key === '?' || (e.shiftKey && e.code === 'Slash')) { e.preventDefault(); toggleHelp(); }
+  else {
+    const edge = bracketEdge(e);
+    if (!edge) return;
+    e.preventDefault();
+    if (e.altKey && !cmd && !e.shiftKey) trimToCursor(edge);
+    else if (cmd && !e.altKey && !e.shiftKey) seekClipEdge(edge);
+  }
 }
 
 function bindTimelineResize() {
@@ -731,7 +850,13 @@ function scheduleAutosave() {
 }
 
 function boot() {
-  setFileHooks({ remember: saveFileHandle, lookup: findFileHandle });
+  loadOptions();
+  setFileHooks({
+    remember: saveFileHandle,
+    lookup: findFileHandle,
+    loadThumbs: loadThumbCache,
+    saveThumbs: saveThumbCache
+  });
   initPreview();
   syncProjectInputs();
   setFirstVideoHandler(offerProjectMatch);

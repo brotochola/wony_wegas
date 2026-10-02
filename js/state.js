@@ -4,6 +4,7 @@ export const state = {
   span: 0,
   isPlaying: false,
   isSnapping: true,
+  autoRipple: true,
   selectedClipId: null,
   history: [],
   historyIndex: -1,
