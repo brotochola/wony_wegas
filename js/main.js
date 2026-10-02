@@ -57,7 +57,7 @@ function ask(text) {
 
 function askName(current) {
   return new Promise((resolve) => {
-    document.getElementById('library-title').textContent = 'Guardar proyecto';
+    document.getElementById('library-title').textContent = 'Save project';
     document.getElementById('library-save').classList.remove('hidden');
     document.getElementById('library-list').classList.add('hidden');
     const input = document.getElementById('library-name');
@@ -190,35 +190,35 @@ function saveSessionJson() {
   };
   const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
   const a = document.createElement('a');
-  const safe = (state.projectName || 'sesion').replace(/[^\w\-]+/g, '_');
+  const safe = (state.projectName || 'session').replace(/[^\w\-]+/g, '_');
   a.href = URL.createObjectURL(blob);
   a.download = `${safe}.json`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   state.dirty = false;
-  flash('Sesión guardada en JSON');
+  flash('Session saved as JSON');
 }
 
 async function openSessionJson(file) {
   try {
     const project = JSON.parse(await file.text());
     if (!project || !Array.isArray(project.clips)) throw new Error('formato');
-    if (state.dirty && !await ask('Hay cambios sin guardar. ¿Abrir esta sesión igual?')) return;
+    if (state.dirty && !await ask('There are unsaved changes. Open this session anyway?')) return;
     await restoreProject(project);
   } catch (err) {
     console.warn(err);
-    flash('Ese JSON no es una sesión de este editor', 'error');
+    flash('That JSON is not a session from this editor', 'error');
   }
 }
 
 async function saveProject() {
   try {
-    const name = await askName(state.projectName || 'Proyecto');
+    const name = await askName(state.projectName || 'Project');
     if (!name) return;
     const db = await openDb();
     const all = await listProjects(db);
     const existing = all.find(p => p.name.toLowerCase() === name.toLowerCase());
-    if (existing && !await ask(`Ya existe «${existing.name}». ¿Reemplazarlo?`)) {
+    if (existing && !await ask(`"${existing.name}" already exists. Replace it?`)) {
       db.close();
       return;
     }
@@ -239,10 +239,10 @@ async function saveProject() {
     state.projectName = name;
     state.dirty = false;
     document.getElementById('project-title').textContent = name;
-    flash(`Guardado: ${name}`);
+    flash(`Saved: ${name}`);
   } catch (err) {
     console.warn(err);
-    flash('No se pudo guardar', 'error');
+    flash('Couldn\'t save', 'error');
   }
 }
 
@@ -260,7 +260,7 @@ async function restoreProject(project) {
   state.selectedClipId = null;
   state.currentTime = 0;
   state.span = 0;
-  document.getElementById('project-title').textContent = state.projectName || 'Proyecto_01';
+  document.getElementById('project-title').textContent = state.projectName || 'Project_01';
   syncProjectInputs();
   resizePreview();
   const records = project.media || [];
@@ -268,19 +268,19 @@ async function restoreProject(project) {
   if (missing.length) {
     const files = await askRelink(missing);
     if (files.length) missing = await attachFiles(missing, files);
-    if (missing.length) flash(`Faltan: ${missing.map(rec => rec.name || 'archivo').join(', ')}`, 'error');
+    if (missing.length) flash(`Missing: ${missing.map(rec => rec.name || 'file').join(', ')}`, 'error');
   }
   resetHistory();
   state.dirty = false;
   renderTimeline();
   seek(0);
   updateInspector();
-  flash(`Proyecto cargado: ${state.projectName}`);
+  flash(`Project loaded: ${state.projectName}`);
 }
 
 function askRelink(missing) {
   return new Promise((resolve) => {
-    document.getElementById('library-title').textContent = 'Volver a elegir archivos';
+    document.getElementById('library-title').textContent = 'Choose files again';
     document.getElementById('library-save').classList.add('hidden');
     const list = document.getElementById('library-list');
     list.classList.remove('hidden');
@@ -288,13 +288,13 @@ function askRelink(missing) {
     const note = document.createElement('p');
     note.className = 'px-3 py-2 text-slate-300';
     note.textContent = savedOnThisComputer(missing)
-      ? 'Estos archivos ya se abrieron en esta computadora. Confirmá el permiso y se vuelven a abrir sin copiarlos.'
-      : 'Elegí los mismos archivos. En Chrome queda guardado el permiso de esta computadora, sin copiar los videos.';
+      ? 'These files were already opened on this computer. Confirm permission and they reopen without being copied.'
+      : 'Choose the same files. In Chrome the permission stays on this computer, and the videos are not copied.';
     const names = document.createElement('ul');
     names.className = 'px-5 pb-2 list-disc text-slate-400';
     for (const rec of missing) {
       const item = document.createElement('li');
-      item.textContent = rec.name || 'archivo';
+      item.textContent = rec.name || 'file';
       names.appendChild(item);
     }
     const row = document.createElement('div');
@@ -302,18 +302,18 @@ function askRelink(missing) {
     const pick = document.createElement('button');
     pick.type = 'button';
     pick.className = 'px-3 py-1.5 rounded bg-vegas-border hover:bg-slate-700 text-slate-100 font-bold';
-    pick.textContent = 'Elegir archivos';
+    pick.textContent = 'Choose files';
     const skip = document.createElement('button');
     skip.type = 'button';
     skip.className = 'px-3 py-1.5 text-slate-400 hover:text-white';
-    skip.textContent = 'Seguir sin ellos';
+    skip.textContent = 'Continue without them';
     row.append(skip, pick);
     const saved = missing.filter(rec => rec.handle);
     if (saved.length) {
       const allow = document.createElement('button');
       allow.type = 'button';
       allow.className = 'px-3 py-1.5 rounded bg-cyan-500 text-slate-950 font-bold';
-      allow.textContent = 'Abrir los de esta computadora';
+      allow.textContent = 'Open the ones on this computer';
       row.append(allow);
       allow.onclick = async () => {
         allow.disabled = true;
@@ -365,7 +365,7 @@ function savedOnThisComputer(missing) {
 
 function pickProject(projects) {
   return new Promise((resolve) => {
-    document.getElementById('library-title').textContent = 'Cargar proyecto';
+    document.getElementById('library-title').textContent = 'Load project';
     document.getElementById('library-save').classList.add('hidden');
     const list = document.getElementById('library-list');
     list.classList.remove('hidden');
@@ -404,16 +404,16 @@ async function loadProject() {
     const all = (await listProjects(db)).sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
     db.close();
     if (!all.length) {
-      flash('No hay proyectos guardados');
+      flash('No saved projects');
       return;
     }
     const picked = await pickProject(all);
     if (!picked) return;
-    if (state.dirty && !await ask('Hay cambios sin guardar. ¿Cargar este proyecto igual?')) return;
+    if (state.dirty && !await ask('There are unsaved changes. Load this project anyway?')) return;
     await restoreProject(picked);
   } catch (err) {
     console.warn(err);
-    flash('No se pudo cargar', 'error');
+    flash('Couldn\'t load', 'error');
   }
 }
 
@@ -426,8 +426,8 @@ async function offerProjectMatch(asset) {
     if (fps) asset.fps = fps;
     seek(state.currentTime);
   }
-  const fpsText = fps ? `${fps} fps` : `${state.fps} fps (no se pudo leer el del video)`;
-  const yes = await ask(`Este video es ${asset.width}×${asset.height} a ${fpsText}. ¿Usar ese tamaño y fps para el proyecto?`);
+  const fpsText = fps ? `${fps} fps` : `${state.fps} fps (the video frame rate could not be read)`;
+  const yes = await ask(`This video is ${asset.width}×${asset.height} at ${fpsText}. Use that size and frame rate for the project?`);
   if (!yes) return;
   applyProject(asset.width, asset.height, fps || state.fps);
   state.dirty = true;
@@ -437,7 +437,7 @@ async function useClipForProject() {
   const clip = state.clips.find(c => c.id === state.selectedClipId);
   const asset = clip ? assetById(clip.assetId) : null;
   if (!asset?.width || !asset?.height) {
-    flash('Este clip no tiene tamaño de imagen', 'error');
+    flash('This clip has no picture size', 'error');
     return;
   }
   let fps = state.fps;
@@ -446,7 +446,7 @@ async function useClipForProject() {
     if (fps) asset.fps = fps;
   }
   applyProject(asset.width, asset.height, fps);
-  flash(`Proyecto ${state.projectWidth}×${state.projectHeight} a ${state.fps} fps`);
+  flash(`Project ${state.projectWidth}×${state.projectHeight} at ${state.fps} fps`);
 }
 
 function updateInspector() {

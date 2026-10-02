@@ -52,7 +52,7 @@ function waitMedia(el, event, ms) {
 }
 
 function codecMessage(name) {
-  return `No se puede reproducir «${name}». El navegador no soporta ese códec.`;
+  return `Can't play "${name}". This browser doesn't support that codec.`;
 }
 
 function park(el) {
@@ -145,7 +145,7 @@ async function mountAsset(source) {
       asset.duration = video.duration || 0;
       asset.width = video.videoWidth || 0;
       asset.height = video.videoHeight || 0;
-      if (!asset.duration) throw new Error(video.error ? codecMessage(name) : 'duración');
+      if (!asset.duration) throw new Error(video.error ? codecMessage(name) : 'duration');
       try { await video.play(); video.pause(); video.currentTime = 0; } catch { /* el gesto de importar a veces no alcanza para el autoplay */ }
       asset.width = video.videoWidth || asset.width;
       asset.height = video.videoHeight || asset.height;
@@ -162,7 +162,7 @@ async function mountAsset(source) {
       asset.duration = audio.duration || 0;
       audio.removeAttribute('src');
       audio.load();
-      if (!asset.duration) throw new Error('duración');
+      if (!asset.duration) throw new Error('duration');
     } else {
       const img = new Image();
       img.src = url;
@@ -374,14 +374,14 @@ export async function importEntries(entries) {
       added++;
     } catch (err) {
       console.warn(err);
-      const name = entry.file?.name || 'archivo';
-      flash(err.message && err.message.includes('soporta') ? err.message : `No se pudo leer ${name}`, 'error');
+      const name = entry.file?.name || 'file';
+      flash(err.message && err.message.includes("doesn't support") ? err.message : `Couldn't read ${name}`, 'error');
     }
   }
   if (added) {
     state.dirty = true;
     document.dispatchEvent(new CustomEvent('project-dirty'));
-    flash(added === 1 ? '1 archivo importado' : `${added} archivos importados`);
+    flash(added === 1 ? '1 file imported' : `${added} files imported`);
   }
 }
 
@@ -511,7 +511,7 @@ export async function attachFiles(records, items) {
 
 export function removeAsset(id) {
   if (state.clips.some(clip => clip.assetId === id)) {
-    flash('Ese archivo está en la línea de tiempo', 'error');
+    flash('That file is on the timeline', 'error');
     return false;
   }
   const asset = state.mediaPool.find(item => item.id === id);
@@ -528,7 +528,7 @@ export function removeUnused() {
   const used = new Set(state.clips.map(clip => clip.assetId));
   const unused = state.mediaPool.filter(asset => !used.has(asset.id));
   if (!unused.length) {
-    flash('No hay archivos sin usar');
+    flash('No unused files');
     return;
   }
   for (const asset of unused) dropAsset(asset, new Set());
@@ -536,30 +536,30 @@ export function removeUnused() {
   state.dirty = true;
   document.dispatchEvent(new CustomEvent('project-dirty'));
   renderMediaPool();
-  flash(unused.length === 1 ? '1 archivo quitado' : `${unused.length} archivos quitados`);
+  flash(unused.length === 1 ? '1 file removed' : `${unused.length} files removed`);
 }
 
 export async function replacePool(records) {
   const missing = await openMedia(records);
-  for (const rec of missing) flash(`No se pudo leer ${rec.name || 'un asset'}`, 'error');
+  for (const rec of missing) flash(`Couldn't read ${rec.name || 'an asset'}`, 'error');
 }
 
-const TYPE_LABEL = { video: 'Video', audio: 'Audio', image: 'Imagen', text: 'Texto' };
+const TYPE_LABEL = { video: 'Video', audio: 'Audio', image: 'Image', text: 'Text' };
 
 export function assetRows(asset, clip) {
   const rows = [
-    ['Tipo', TYPE_LABEL[asset.type] || asset.type],
-    ['Duración', formatDuration(asset.duration)],
-    ['Tamaño', formatBytes(asset.size)],
+    ['Type', TYPE_LABEL[asset.type] || asset.type],
+    ['Duration', formatDuration(asset.duration)],
+    ['Size', formatBytes(asset.size)],
     ['MIME', asset.mime || '—']
   ];
-  if (asset.width && asset.height) rows.splice(2, 0, ['Resolución', `${asset.width}×${asset.height}`]);
+  if (asset.width && asset.height) rows.splice(2, 0, ['Resolution', `${asset.width}×${asset.height}`]);
   if (asset.audioBuffer) {
     rows.push(['Audio', `${asset.audioBuffer.numberOfChannels} ch · ${asset.audioBuffer.sampleRate} Hz`]);
   } else if (asset.audioEl) {
-    rows.push(['Audio', 'reproducción nativa']);
+    rows.push(['Audio', 'native playback']);
   }
-  if (clip) rows.push(['En timeline', `${formatDuration(clip.startTime)} · ${formatDuration(clip.duration)}`]);
+  if (clip) rows.push(['On timeline', `${formatDuration(clip.startTime)} · ${formatDuration(clip.duration)}`]);
   return rows;
 }
 
@@ -629,7 +629,7 @@ export function renderMediaPool() {
     const del = document.createElement('button');
     del.type = 'button';
     del.className = 'absolute top-1 left-1 z-10 w-4 h-4 rounded bg-black/70 text-slate-300 hover:text-red-400';
-    del.title = 'Quitar del proyecto';
+    del.title = 'Remove from project';
     del.innerHTML = '<i class="fa-solid fa-xmark text-[9px]"></i>';
     del.addEventListener('mousedown', (e) => e.stopPropagation());
     del.addEventListener('click', (e) => {
@@ -716,7 +716,7 @@ export function poolRecords() {
 }
 
 export const MEDIA_TYPES = [{
-  description: 'Video, audio o imagen',
+  description: 'Video, audio, or image',
   accept: {
     'video/*': ['.mp4', '.webm', '.mov', '.mkv', '.m4v', '.ogv'],
     'audio/*': ['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.opus'],

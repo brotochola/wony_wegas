@@ -144,7 +144,7 @@ function createTrack(type) {
 function place(asset, track, startTime) {
   const type = clipTypeFor(asset, track);
   if (!type) {
-    flash(track.type === 'audio' ? 'Ese archivo no va en una pista de audio' : 'El audio va en una pista de audio');
+    flash(track.type === 'audio' ? 'That file does not belong on an audio track' : 'Audio belongs on an audio track');
     return;
   }
   const duration = Math.max(0.2, asset.duration || 5);
@@ -195,7 +195,7 @@ export function insertAsset(assetId) {
 }
 
 export function addTextClip() {
-  const text = document.getElementById('text-gen-input').value.trim() || 'Texto';
+  const text = document.getElementById('text-gen-input').value.trim() || 'Text';
   const textColor = document.getElementById('text-gen-color').value || '#00d2ff';
   const fontSize = Math.max(8, parseFloat(document.getElementById('text-gen-size')?.value) || 72);
   const fontFamily = document.getElementById('text-gen-font')?.value || 'Inter, sans-serif';
@@ -389,7 +389,7 @@ function buildClip(clip) {
   if (clip.linkedClipId) {
     const link = document.createElement('i');
     link.className = 'fa-solid fa-link absolute bottom-0.5 right-1 text-[9px] text-white/80 z-10 pointer-events-none';
-    link.title = 'Audio y video enlazados: se mueven juntos';
+    link.title = 'Audio and video are linked and move together';
     el.appendChild(link);
   }
 
@@ -412,8 +412,8 @@ function buildClip(clip) {
   const fadeOut = makeHandle('absolute top-0 w-3 h-3 bg-white/70 hover:bg-cyan-300 clip-handle-fade-out cursor-ew-resize z-30', 'fade-out', 'Fade out');
   fadeIn.style.left = `${Math.max(0, (clip.fadeIn || 0) * state.zoom)}px`;
   fadeOut.style.right = `${Math.max(0, (clip.fadeOut || 0) * state.zoom)}px`;
-  const trimL = makeHandle('absolute top-0 bottom-0 left-0 w-2 hover:bg-cyan-400/50 cursor-ew-resize z-20', 'trim-left', 'Recortar inicio');
-  const trimR = makeHandle('absolute top-0 bottom-0 right-0 w-2 hover:bg-cyan-400/50 cursor-ew-resize z-20', 'trim-right', 'Recortar final');
+  const trimL = makeHandle('absolute top-0 bottom-0 left-0 w-2 hover:bg-cyan-400/50 cursor-ew-resize z-20', 'trim-left', 'Trim start');
+  const trimR = makeHandle('absolute top-0 bottom-0 right-0 w-2 hover:bg-cyan-400/50 cursor-ew-resize z-20', 'trim-right', 'Trim end');
   for (const handle of [fadeIn, fadeOut, trimL, trimR]) {
     handle.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
@@ -446,9 +446,9 @@ function buildClip(clip) {
     return {
       title: clip.name,
       rows: [
-        ['Tipo', 'Texto'],
-        ['Duración', `${clip.duration.toFixed(1)} s`],
-        ['Inicio', `${clip.startTime.toFixed(1)} s`]
+        ['Type', 'Text'],
+        ['Duration', `${clip.duration.toFixed(1)} s`],
+        ['Start', `${clip.startTime.toFixed(1)} s`]
       ]
     };
   });
@@ -686,12 +686,12 @@ export function renderTimeline() {
     mute.type = 'button';
     mute.className = `px-1.5 py-0.5 rounded text-[10px] ${track.muted ? 'bg-red-600 text-white' : 'bg-slate-700 text-slate-300'}`;
     mute.textContent = 'M';
-    mute.title = track.muted ? 'Activar pista' : 'Silenciar pista';
+    mute.title = track.muted ? 'Unmute track' : 'Mute track';
     mute.addEventListener('click', () => toggleMute(track.id));
     const del = document.createElement('button');
     del.type = 'button';
     del.className = 'p-1 text-slate-500 hover:text-red-400 ml-auto';
-    del.title = 'Eliminar pista';
+    del.title = 'Delete track';
     del.innerHTML = '<i class="fa-solid fa-xmark"></i>';
     del.addEventListener('click', () => deleteTrack(track.id));
     bottom.append(mute);
@@ -700,7 +700,7 @@ export function renderTimeline() {
       eye.type = 'button';
       eye.className = `px-1.5 py-0.5 rounded text-[10px] ${track.hidden ? 'bg-slate-900 text-slate-500' : 'bg-slate-700 text-slate-300'}`;
       eye.innerHTML = `<i class="fa-solid ${track.hidden ? 'fa-eye-slash' : 'fa-eye'}"></i>`;
-      eye.title = track.hidden ? 'Mostrar imagen' : 'Ocultar imagen';
+      eye.title = track.hidden ? 'Show picture' : 'Hide picture';
       eye.addEventListener('click', () => toggleHidden(track.id));
       bottom.append(eye);
     }
@@ -909,12 +909,12 @@ export function copySelected() {
   if (!clip) return;
   const partner = partnerOf(clip);
   clipClipboard = JSON.parse(JSON.stringify(partner ? [clip, partner] : [clip]));
-  flash('Clip copiado');
+  flash('Clip copied');
 }
 
 export function pasteClipboard() {
   if (!clipClipboard?.length) {
-    flash('Nada para pegar');
+    flash('Nothing to paste');
     return;
   }
   const base = Math.min(...clipClipboard.map(item => item.startTime));
@@ -990,14 +990,14 @@ export function unlinkSelected() {
   document.getElementById('context-menu')?.classList.add('hidden');
   const clip = selectedClip();
   if (!clip) {
-    flash('Selecciona un clip de video');
+    flash('Select a video clip');
     return;
   }
   const partner = partnerOf(clip);
   if (partner) {
     clip.linkedClipId = null;
     partner.linkedClipId = null;
-    flash('Audio y video separados');
+    flash('Audio and video unlinked');
     pushHistory();
     renderTimeline();
     commitPlayback();
@@ -1005,14 +1005,14 @@ export function unlinkSelected() {
   }
   const videoClip = clip.type === 'video' ? clip : null;
   if (!videoClip || !assetById(videoClip.assetId)) {
-    flash('No hay audio vinculado para separar');
+    flash('No linked audio to separate');
     return;
   }
   const audioClip = makeAudioPartner(videoClip);
   audioClip.linkedClipId = null;
   videoClip.linkedClipId = null;
   videoClip.muteAudio = true;
-  flash('Audio pasado a la pista de audio');
+  flash('Audio moved to the audio track');
   pushHistory();
   renderTimeline();
   commitPlayback();

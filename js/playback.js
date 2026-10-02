@@ -293,7 +293,7 @@ function drawUnsupported(ctx, w, h, name) {
   ctx.font = `bold ${Math.round(h / 22)}px Inter, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('Códec no compatible', w / 2, h / 2 - h / 18);
+  ctx.fillText('Unsupported codec', w / 2, h / 2 - h / 18);
   ctx.font = `${Math.round(h / 32)}px Inter, sans-serif`;
   ctx.fillStyle = '#94a3b8';
   const label = name.length > 60 ? `${name.slice(0, 57)}…` : name;

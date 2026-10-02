@@ -34,14 +34,14 @@ export async function checkCodecSupport() {
   const bitrate = Math.max(1, Number(document.getElementById('exp-bitrate').value) || 8) * 1e6;
   const framerate = Number(document.getElementById('exp-fps').value) || 30;
   if (!('VideoEncoder' in window)) {
-    setBadge(false, 'Sin WebCodecs, se usará MediaRecorder');
+    setBadge(false, 'No WebCodecs, MediaRecorder will be used');
     return;
   }
   try {
     const res = await VideoEncoder.isConfigSupported({ codec, width, height, bitrate, framerate });
-    setBadge(!!res.supported, res.supported ? 'Hardware compatible' : 'Códec no disponible');
+    setBadge(!!res.supported, res.supported ? 'Hardware supported' : 'Codec unavailable');
   } catch {
-    setBadge(false, 'No se pudo comprobar el códec');
+    setBadge(false, 'Couldn\'t check the codec');
   }
 }
 
@@ -221,7 +221,7 @@ async function exportWebCodecs(canvas, ctx, settings, range, mixed, token) {
     const pct = Math.round(((frame + 1) / total) * 100);
     bar.style.width = `${pct}%`;
     percent.textContent = `${pct}%`;
-    label.textContent = `Fotograma ${frame + 1} / ${total}`;
+    label.textContent = `Frame ${frame + 1} / ${total}`;
     await new Promise(r => setTimeout(r, 0));
   }
   await videoEncoder.flush();
@@ -270,7 +270,7 @@ async function exportRecorder(canvas, ctx, settings, range, mixed, token) {
     const pct = Math.round(((frame + 1) / total) * 100);
     bar.style.width = `${pct}%`;
     percent.textContent = `${pct}%`;
-    label.textContent = `Grabando ${frame + 1} / ${total}`;
+    label.textContent = `Recording ${frame + 1} / ${total}`;
     await new Promise(r => setTimeout(r, 1000 / fps));
   }
   rec.stop();
@@ -300,7 +300,7 @@ export async function startExport() {
   const bar = document.getElementById('exp-progress-bar');
   const percent = document.getElementById('exp-progress-percent');
   if (range.end - range.start <= 0.05) {
-    flash('No hay clips para exportar');
+    flash('No clips to export');
     return;
   }
   const token = ++exportToken;
@@ -310,8 +310,8 @@ export async function startExport() {
   bar.style.width = '0%';
   percent.textContent = '0%';
   const audioGap = missingDecodedAudio();
-  if (audioGap) flash('Hay clips con audio sin decodificar. El export puede salir sin ese sonido.');
-  label.textContent = audioGap ? 'Audio incompleto. Preparando…' : 'Preparando…';
+  if (audioGap) flash('Some clips have audio that is not decoded. The export may be missing that sound.');
+  label.textContent = audioGap ? 'Incomplete audio. Preparing…' : 'Preparing…';
   holdPreview(true);
   const settings = exportSettings();
   const canvas = document.createElement('canvas');
@@ -329,27 +329,27 @@ export async function startExport() {
   }
   try {
     if (token !== exportToken) {
-      label.textContent = 'Cancelado';
+      label.textContent = 'Canceled';
     } else if ('VideoEncoder' in window) {
       try {
         finished = await exportWebCodecs(canvas, ctx, settings, range, mixed, token);
       } catch (err) {
         if (token !== exportToken) {
-          label.textContent = 'Cancelado';
+          label.textContent = 'Canceled';
         } else {
           console.warn('WebCodecs', err);
-          label.textContent = 'WebCodecs falló, grabando…';
+          label.textContent = 'WebCodecs failed, recording…';
           finished = await exportRecorder(canvas, ctx, settings, range, mixed, token);
         }
       }
     } else {
       finished = await exportRecorder(canvas, ctx, settings, range, mixed, token);
     }
-    if (token !== exportToken || finished === false) label.textContent = 'Cancelado';
-    else if (finished) label.textContent = mixed || !wantedAudio ? 'Exportación lista' : 'Listo, sin ese audio: el navegador no lo decodificó';
+    if (token !== exportToken || finished === false) label.textContent = 'Canceled';
+    else if (finished) label.textContent = mixed || !wantedAudio ? 'Export ready' : 'Ready, without that audio: the browser did not decode it';
   } catch (err) {
     console.error(err);
-    label.textContent = token === exportToken ? 'No se pudo exportar' : 'Cancelado';
+    label.textContent = token === exportToken ? 'Couldn\'t export' : 'Canceled';
   } finally {
     btn.disabled = false;
     abortBtn?.classList.add('hidden');
