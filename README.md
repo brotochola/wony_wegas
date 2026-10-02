@@ -6,15 +6,9 @@ A super easy video editor that runs in the browser. No install, no account, and 
 
 ## Open it
 
-Serve this folder with any static file server, then open `index.html`.
+[https://brotochola.github.io/wony_wegas/](https://brotochola.github.io/wony_wegas/)
 
-If the project is already in XAMPP:
-
-```
-http://localhost/video_editor_web/
-```
-
-Or, from this folder:
+To run this folder yourself, serve it with any static file server and open `index.html`. From this folder:
 
 ```
 npx --yes serve .
