@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sony Vegas Web Video Editor</title>
+  <title>Wony Wegas</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -38,11 +38,11 @@
   <header class="h-12 bg-vegas-panel border-b border-vegas-border flex items-center justify-between px-4 z-20">
     <div class="flex items-center space-x-3">
       <div class="flex items-center space-x-2 font-bold text-lg tracking-wider">
-        <span class="bg-gradient-to-r from-cyan-400 to-blue-600 text-transparent bg-clip-text">VEGAS</span>
-        <span class="bg-cyan-500 text-slate-950 text-xs px-1.5 py-0.5 rounded font-mono font-bold">WEB PRO</span>
+        <span class="bg-gradient-to-r from-cyan-400 to-blue-600 text-transparent bg-clip-text">WONY</span>
+        <span class="bg-cyan-500 text-slate-950 text-xs px-1.5 py-0.5 rounded font-mono font-bold">WEGAS</span>
       </div>
       <span class="text-xs text-slate-500">|</span>
-      <span id="project-title" class="text-xs text-slate-400 font-mono">Proyecto_Vegas_01.veg</span>
+      <span id="project-title" class="text-xs text-slate-400 font-mono">Proyecto_01</span>
     </div>
     <div class="flex items-center space-x-2">
       <button type="button" id="btn-undo" class="p-1.5 text-slate-400 hover:text-white disabled:opacity-30" title="Deshacer (Ctrl+Z)" disabled>
@@ -80,8 +80,9 @@
         <button type="button" id="tab-btn-titles" class="px-3 py-2 text-slate-400 hover:text-white">Generador de Texto</button>
       </div>
       <div id="tab-content-media" class="flex-1 flex flex-col p-2 overflow-hidden">
-        <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center justify-between gap-2 mb-2 flex-wrap">
           <span class="text-xs text-slate-400">Archivos cargados (<span id="media-count">0</span>)</span>
+          <button type="button" id="btn-unused" title="Quitar archivos que no están en la línea de tiempo" class="text-slate-400 hover:text-red-300">Quitar no usados</button>
           <label title="Importar video, audio o imagen" class="bg-vegas-panelLight hover:bg-vegas-border border border-slate-700 text-xs text-slate-200 px-2.5 py-1 rounded cursor-pointer flex items-center gap-1">
             <i class="fa-solid fa-plus text-cyan-400"></i>
             <span>Añadir Archivo</span>
@@ -100,11 +101,36 @@
         <div class="space-y-3">
           <div>
             <label class="text-xs text-slate-400 block mb-1" for="text-gen-input">Texto del Título</label>
-            <input type="text" id="text-gen-input" value="TEXTO VEGAS PRO" class="w-full bg-vegas-bg border border-vegas-border rounded px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-cyan-400">
+            <input type="text" id="text-gen-input" value="Texto" class="w-full bg-vegas-bg border border-vegas-border rounded px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-cyan-400">
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-xs text-slate-400 block mb-1" for="text-gen-size">Tamaño</label>
+              <input type="number" id="text-gen-size" min="8" max="400" value="72" class="w-full bg-vegas-bg border border-vegas-border rounded px-2.5 py-1.5 text-xs text-slate-100">
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1" for="text-gen-font">Fuente</label>
+              <select id="text-gen-font" class="w-full bg-vegas-bg border border-vegas-border rounded px-2 py-1.5 text-xs text-slate-100">
+                <option value="Inter, sans-serif">Inter</option>
+                <option value="Arial, sans-serif">Arial</option>
+                <option value="Georgia, serif">Georgia</option>
+                <option value="Impact, sans-serif">Impact</option>
+              </select>
+            </div>
           </div>
           <div>
             <label class="text-xs text-slate-400 block mb-1" for="text-gen-color">Color del Texto</label>
             <input type="color" id="text-gen-color" value="#00d2ff" class="w-full h-8 bg-vegas-bg border border-vegas-border rounded p-1 cursor-pointer">
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-xs text-slate-400 block mb-1" for="text-gen-stroke">Borde</label>
+              <input type="number" id="text-gen-stroke" min="0" max="40" value="0" class="w-full bg-vegas-bg border border-vegas-border rounded px-2.5 py-1.5 text-xs text-slate-100">
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1" for="text-gen-stroke-color">Color del borde</label>
+              <input type="color" id="text-gen-stroke-color" value="#000000" class="w-full h-8 bg-vegas-bg border border-vegas-border rounded p-1 cursor-pointer">
+            </div>
           </div>
           <button type="button" id="btn-add-text" class="w-full bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold text-xs py-2 rounded flex items-center justify-center gap-1">
             <i class="fa-solid fa-plus"></i>
@@ -123,11 +149,18 @@
           <input id="proj-h" type="number" min="2" step="2" value="1080" title="Alto" class="w-16 bg-vegas-bg border border-vegas-border rounded px-1 py-0.5 text-slate-100">
           <input id="proj-fps" type="number" min="1" max="120" value="30" title="FPS" class="w-12 bg-vegas-bg border border-vegas-border rounded px-1 py-0.5 text-slate-100">
           <span class="font-sans">fps</span>
+          <button type="button" id="preset-169" title="16:9" class="px-1.5 py-0.5 rounded bg-vegas-bg border border-vegas-border hover:border-cyan-400 font-sans">16:9</button>
+          <button type="button" id="preset-916" title="9:16" class="px-1.5 py-0.5 rounded bg-vegas-bg border border-vegas-border hover:border-cyan-400 font-sans">9:16</button>
+          <button type="button" id="preset-11" title="1:1" class="px-1.5 py-0.5 rounded bg-vegas-bg border border-vegas-border hover:border-cyan-400 font-sans">1:1</button>
           <button type="button" id="proj-apply" title="Aplicar ancho, alto y fps al proyecto" class="ml-1 px-2 py-0.5 rounded bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-sans font-bold">Aplicar</button>
         </div>
       </div>
-      <div class="flex-1 bg-black flex items-center justify-center relative overflow-hidden p-2">
+      <div id="preview-stage" class="flex-1 bg-black flex items-center justify-center relative overflow-hidden p-2">
         <canvas id="preview-canvas" class="max-w-full max-h-full bg-black shadow-2xl border border-slate-800 rounded-sm"></canvas>
+        <div id="transform-box" class="hidden absolute border border-cyan-400 z-10">
+          <div id="transform-move" class="absolute inset-0 cursor-move" title="Mover"></div>
+          <div id="transform-scale" class="absolute -right-1.5 -bottom-1.5 w-3 h-3 bg-cyan-400 rounded-sm cursor-nwse-resize" title="Escalar"></div>
+        </div>
       </div>
       <div class="h-12 bg-vegas-panelLight border-t border-vegas-border flex items-center justify-between px-4">
         <div class="font-mono text-lg font-bold text-cyan-400 bg-vegas-bg border border-vegas-border px-3 py-0.5 rounded shadow-inner" id="timecode-display">00:00:00:00</div>
@@ -192,6 +225,72 @@
               </div>
             </div>
           </div>
+          <div id="insp-transform" class="space-y-3 pt-2 border-t border-vegas-border">
+            <span class="text-cyan-400 font-bold block">Encuadre</span>
+            <div id="insp-scale-wrap">
+              <div class="flex justify-between text-slate-400 mb-1">
+                <span>Escala</span>
+                <span id="insp-scale-val">100%</span>
+              </div>
+              <input type="range" min="0.1" max="4" step="0.01" id="insp-scale" class="w-full accent-cyan-400">
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-slate-400 block mb-1" for="insp-x">X</label>
+                <input type="number" step="1" id="insp-x" class="w-full bg-vegas-bg border border-vegas-border rounded px-2 py-1 text-slate-100">
+              </div>
+              <div>
+                <label class="text-slate-400 block mb-1" for="insp-y">Y</label>
+                <input type="number" step="1" id="insp-y" class="w-full bg-vegas-bg border border-vegas-border rounded px-2 py-1 text-slate-100">
+              </div>
+            </div>
+            <div id="insp-crop" class="grid grid-cols-4 gap-1">
+              <div>
+                <label class="text-slate-400 block mb-1" for="insp-crop-l">Izq %</label>
+                <input type="number" min="0" max="80" step="1" id="insp-crop-l" class="w-full bg-vegas-bg border border-vegas-border rounded px-1 py-1 text-slate-100">
+              </div>
+              <div>
+                <label class="text-slate-400 block mb-1" for="insp-crop-r">Der %</label>
+                <input type="number" min="0" max="80" step="1" id="insp-crop-r" class="w-full bg-vegas-bg border border-vegas-border rounded px-1 py-1 text-slate-100">
+              </div>
+              <div>
+                <label class="text-slate-400 block mb-1" for="insp-crop-t">Arr %</label>
+                <input type="number" min="0" max="80" step="1" id="insp-crop-t" class="w-full bg-vegas-bg border border-vegas-border rounded px-1 py-1 text-slate-100">
+              </div>
+              <div>
+                <label class="text-slate-400 block mb-1" for="insp-crop-b">Aba %</label>
+                <input type="number" min="0" max="80" step="1" id="insp-crop-b" class="w-full bg-vegas-bg border border-vegas-border rounded px-1 py-1 text-slate-100">
+              </div>
+            </div>
+          </div>
+          <div id="insp-text" class="space-y-3 pt-2 border-t border-vegas-border hidden">
+            <span class="text-violet-400 font-bold block">Texto</span>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-slate-400 block mb-1" for="insp-font-size">Tamaño</label>
+                <input type="number" min="8" max="400" id="insp-font-size" class="w-full bg-vegas-bg border border-vegas-border rounded px-2 py-1 text-slate-100">
+              </div>
+              <div>
+                <label class="text-slate-400 block mb-1" for="insp-font">Fuente</label>
+                <select id="insp-font" class="w-full bg-vegas-bg border border-vegas-border rounded px-2 py-1 text-slate-100">
+                  <option value="Inter, sans-serif">Inter</option>
+                  <option value="Arial, sans-serif">Arial</option>
+                  <option value="Georgia, serif">Georgia</option>
+                  <option value="Impact, sans-serif">Impact</option>
+                </select>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-slate-400 block mb-1" for="insp-stroke">Borde</label>
+                <input type="number" min="0" max="40" id="insp-stroke" class="w-full bg-vegas-bg border border-vegas-border rounded px-2 py-1 text-slate-100">
+              </div>
+              <div>
+                <label class="text-slate-400 block mb-1" for="insp-stroke-color">Color</label>
+                <input type="color" id="insp-stroke-color" class="w-full h-8 bg-vegas-bg border border-vegas-border rounded p-1 cursor-pointer">
+              </div>
+            </div>
+          </div>
           <button type="button" id="insp-use-project" title="El proyecto pasa a tener el tamaño y los fps de este clip" class="w-full bg-vegas-border hover:bg-slate-700 text-slate-100 font-bold py-2 rounded">
             Usar tamaño y fps del clip
           </button>
@@ -210,14 +309,15 @@
     </section>
   </main>
 
-  <section class="h-64 bg-vegas-panel border-t border-vegas-border flex flex-col z-10 min-h-0">
+  <section id="timeline-panel" class="h-72 bg-vegas-panel border-t border-vegas-border flex flex-col z-10 min-h-0">
+    <div id="timeline-resize" class="h-1.5 cursor-ns-resize bg-vegas-border hover:bg-cyan-500 shrink-0" title="Arrastrar para cambiar el alto"></div>
     <div class="h-9 bg-vegas-panelLight border-b border-vegas-border flex items-center justify-between px-3 text-xs">
       <div class="flex items-center space-x-2">
         <button type="button" id="btn-split" class="bg-vegas-border hover:bg-slate-700 text-slate-200 px-2.5 py-1 rounded flex items-center gap-1" title="Dividir clip en el cabezal (S)">
           <i class="fa-solid fa-scissors text-cyan-400"></i>
           <span>Dividir (S)</span>
         </button>
-        <button type="button" id="btn-delete" class="bg-vegas-border hover:bg-red-900/40 text-slate-200 px-2.5 py-1 rounded flex items-center gap-1" title="Eliminar clip (Supr)">
+        <button type="button" id="btn-delete" class="bg-vegas-border hover:bg-red-900/40 text-slate-200 px-2.5 py-1 rounded flex items-center gap-1" title="Eliminar y cerrar el hueco (Supr). Shift+Supr deja el hueco">
           <i class="fa-solid fa-trash-can text-red-400"></i>
           <span>Eliminar</span>
         </button>
@@ -237,7 +337,7 @@
         <div class="h-4 w-px bg-vegas-border"></div>
         <div class="flex items-center space-x-1">
           <i class="fa-solid fa-magnifying-glass-minus text-slate-400"></i>
-          <input type="range" min="8" max="200" value="40" id="zoom-slider" class="w-20 accent-cyan-400" title="Zoom. Shift + rueda acerca el tiempo actual">
+          <input type="range" min="1" max="200" value="40" id="zoom-slider" class="w-20 accent-cyan-400" title="Zoom. Shift + rueda acerca el tiempo actual. F encuadra todo">
           <i class="fa-solid fa-magnifying-glass-plus text-slate-400"></i>
         </div>
       </div>
@@ -251,6 +351,7 @@
         <div id="timeline-ruler" class="h-6 bg-vegas-panelLight border-b border-vegas-border sticky top-0 z-30 cursor-pointer"></div>
         <div id="snap-line" class="absolute top-0 w-px bg-cyan-400 z-30 pointer-events-none hidden shadow-[0_0_8px_#00d2ff]"></div>
         <div id="playhead" class="absolute top-0 w-0.5 bg-red-500 z-40 pointer-events-none">
+          <div id="playhead-hit" class="absolute -left-2 top-0 w-5 h-6 cursor-ew-resize pointer-events-auto" title="Arrastrar el cabezal"></div>
           <div class="w-3 h-3 bg-red-500 absolute -translate-x-1.5 rotate-45 -top-1"></div>
         </div>
         <div id="track-lanes" class="relative"></div>
@@ -287,6 +388,8 @@
             <option value="1080p">1080p Full HD (1920x1080 - 30 FPS)</option>
             <option value="4k">4K Ultra HD (3840x2160 - 30 FPS)</option>
             <option value="720p">720p HD (1280x720 - 30 FPS)</option>
+            <option value="9:16">Vertical 9:16 (1080x1920)</option>
+            <option value="1:1">Cuadrado 1:1 (1080x1080)</option>
             <option value="custom">Personalizado</option>
           </select>
         </div>
@@ -336,6 +439,7 @@
         </div>
       </div>
       <div class="h-12 bg-vegas-panelLight border-t border-vegas-border flex items-center justify-end px-4 gap-2">
+        <button type="button" id="btn-abort-export" class="hidden px-3 py-1.5 rounded bg-red-600 hover:bg-red-500 text-white font-bold">Cancelar render</button>
         <button type="button" id="btn-cancel-export" class="px-3 py-1.5 text-slate-400 hover:text-white">Cerrar</button>
         <button type="button" id="btn-start-export" class="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-4 py-1.5 rounded flex items-center gap-1.5">
           <i class="fa-solid fa-play"></i>
@@ -370,6 +474,27 @@
         <button type="button" id="ask-no" class="px-3 py-1.5 text-slate-400 hover:text-white">No</button>
         <button type="button" id="ask-yes" class="px-3 py-1.5 rounded bg-cyan-500 text-slate-950 font-bold">Sí</button>
       </div>
+    </div>
+  </div>
+
+  <div id="help-modal" class="fixed inset-0 bg-slate-950/80 z-[60] hidden items-center justify-center p-4">
+    <div class="bg-vegas-panel border border-vegas-border w-full max-w-md rounded-lg shadow-2xl p-4 text-xs">
+      <div class="flex items-center justify-between mb-3">
+        <span class="font-bold text-cyan-400">Atajos de Wony Wegas</span>
+        <button type="button" id="help-close" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <ul class="space-y-1 text-slate-300">
+        <li>Espacio: reproducir o pausar</li>
+        <li>Flechas: un fotograma. Shift + flecha: un segundo</li>
+        <li>S: dividir en el cabezal</li>
+        <li>Supr: eliminar y cerrar el hueco. Shift + Supr: dejar el hueco</li>
+        <li>Ctrl + Z / Ctrl + Y: deshacer y rehacer</li>
+        <li>Ctrl + C / Ctrl + V: copiar y pegar el clip</li>
+        <li>I / O: marca de entrada y de salida. Alt + I: borrarlas</li>
+        <li>+ / −: zoom. F: ver todo el proyecto</li>
+        <li>Doble clic en un archivo: lo agrega al final</li>
+        <li>?: esta lista</li>
+      </ul>
     </div>
   </div>
 

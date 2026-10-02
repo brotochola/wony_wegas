@@ -18,7 +18,9 @@ export const state = {
   fps: 30,
   projectName: '',
   dirty: false,
-  askedFirstClip: false
+  askedFirstClip: false,
+  inPoint: null,
+  outPoint: null
 };
 
 export function uid(prefix) {
@@ -63,8 +65,17 @@ export function formatBytes(n) {
   return `${(n / 1073741824).toFixed(2)} GB`;
 }
 
+function noteChange() {
+  document.dispatchEvent(new CustomEvent('project-dirty'));
+}
+
 export function pushHistory() {
-  const snapshot = JSON.stringify({ tracks: state.tracks, clips: state.clips });
+  const snapshot = JSON.stringify({
+    tracks: state.tracks,
+    clips: state.clips,
+    inPoint: state.inPoint,
+    outPoint: state.outPoint
+  });
   if (state.history[state.historyIndex] === snapshot) {
     updateHistoryButtons();
     return;
@@ -75,6 +86,7 @@ export function pushHistory() {
   state.historyIndex = state.history.length - 1;
   if (hadHistory) state.dirty = true;
   updateHistoryButtons();
+  noteChange();
 }
 
 export function undo() {
@@ -82,6 +94,7 @@ export function undo() {
   state.historyIndex--;
   restoreHistory();
   state.dirty = true;
+  noteChange();
   return true;
 }
 
@@ -90,6 +103,7 @@ export function redo() {
   state.historyIndex++;
   restoreHistory();
   state.dirty = true;
+  noteChange();
   return true;
 }
 
@@ -103,6 +117,8 @@ function restoreHistory() {
   const snap = JSON.parse(state.history[state.historyIndex]);
   state.tracks = snap.tracks;
   state.clips = snap.clips;
+  state.inPoint = snap.inPoint ?? null;
+  state.outPoint = snap.outPoint ?? null;
   if (!state.clips.some(c => c.id === state.selectedClipId)) state.selectedClipId = null;
   updateHistoryButtons();
 }

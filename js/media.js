@@ -1,5 +1,5 @@
 import { state, uid, formatDuration, formatBytes, flash } from './state.js';
-import { audioContext, drawContain, seekMedia } from './playback.js';
+import { audioContext, drawContain, seekMedia, releaseAllClipVideos } from './playback.js';
 
 let onReady = () => {};
 let onInsert = () => {};
@@ -355,33 +355,119 @@ export async function importFiles(fileList) {
   }
   if (added) {
     state.dirty = true;
+    document.dispatchEvent(new CustomEvent('project-dirty'));
     flash(added === 1 ? '1 archivo importado' : `${added} archivos importados`);
   }
 }
 
-export async function replacePool(records) {
-  audioContext();
-  const keep = new Set(records.map(rec => rec.url).filter(url => url && url.startsWith('blob:')));
-  for (const asset of state.mediaPool) {
-    try { asset.mediaSource?.disconnect(); } catch { /* already gone */ }
-    try { asset.elementGain?.disconnect(); } catch { /* already gone */ }
-    asset.element?.pause?.();
-    asset.audioEl?.pause?.();
-    if (asset.url && asset.url.startsWith('blob:') && !keep.has(asset.url)) URL.revokeObjectURL(asset.url);
+function dropAsset(asset, keep) {
+  try { asset.mediaSource?.disconnect(); } catch { /* already gone */ }
+  try { asset.elementGain?.disconnect(); } catch { /* already gone */ }
+  asset.element?.pause?.();
+  asset.audioEl?.pause?.();
+  asset.element?.remove?.();
+  asset.audioEl?.remove?.();
+  if (asset.url && asset.url.startsWith('blob:') && !keep.has(asset.url)) URL.revokeObjectURL(asset.url);
+}
+
+async function urlAlive(url) {
+  if (!url) return false;
+  if (!url.startsWith('blob:')) return true;
+  try {
+    const res = await fetch(url);
+    res.body?.cancel?.();
+    return res.ok;
+  } catch {
+    return false;
   }
+}
+
+export async function openMedia(records) {
+  audioContext();
+  releaseAllClipVideos();
+  const keep = new Set(records.map(rec => rec.url).filter(url => url && url.startsWith('blob:')));
+  for (const asset of state.mediaPool) dropAsset(asset, keep);
   state.mediaPool = [];
   renderMediaPool();
+  const missing = [];
   for (const rec of records) {
     try {
+      if (!await urlAlive(rec.url)) throw new Error('url');
       const asset = await loadFromRecord(rec);
       state.mediaPool.push(asset);
       warm(asset);
     } catch (err) {
-      console.warn(err);
-      flash(`No se pudo leer ${rec.name || 'un asset'}`, 'error');
+      if (err?.message !== 'url') console.warn(err);
+      missing.push(rec);
     }
   }
   renderMediaPool();
+  return missing;
+}
+
+export async function attachFiles(records, files) {
+  const buckets = new Map();
+  for (const file of files || []) {
+    const key = file.name.toLowerCase();
+    const list = buckets.get(key) || [];
+    list.push(file);
+    buckets.set(key, list);
+  }
+  const missing = [];
+  for (const rec of records) {
+    if (state.mediaPool.some(asset => asset.id === rec.id)) continue;
+    const list = buckets.get((rec.name || '').toLowerCase());
+    const file = list?.shift();
+    if (!file) {
+      missing.push(rec);
+      continue;
+    }
+    try {
+      const asset = await loadAsset(file, rec.id);
+      state.mediaPool.push(asset);
+      warm(asset);
+    } catch (err) {
+      console.warn(err);
+      missing.push(rec);
+    }
+  }
+  renderMediaPool();
+  return missing;
+}
+
+export function removeAsset(id) {
+  if (state.clips.some(clip => clip.assetId === id)) {
+    flash('Ese archivo está en la línea de tiempo', 'error');
+    return false;
+  }
+  const asset = state.mediaPool.find(item => item.id === id);
+  if (!asset) return false;
+  dropAsset(asset, new Set());
+  state.mediaPool = state.mediaPool.filter(item => item.id !== id);
+  state.dirty = true;
+  document.dispatchEvent(new CustomEvent('project-dirty'));
+  renderMediaPool();
+  return true;
+}
+
+export function removeUnused() {
+  const used = new Set(state.clips.map(clip => clip.assetId));
+  const unused = state.mediaPool.filter(asset => !used.has(asset.id));
+  if (!unused.length) {
+    flash('No hay archivos sin usar');
+    return;
+  }
+  for (const asset of unused) dropAsset(asset, new Set());
+  state.mediaPool = state.mediaPool.filter(asset => used.has(asset.id));
+  state.dirty = true;
+  document.dispatchEvent(new CustomEvent('project-dirty'));
+  renderMediaPool();
+  flash(unused.length === 1 ? '1 archivo quitado' : `${unused.length} archivos quitados`);
+}
+
+export async function replacePool(records) {
+  const missing = await openMedia(records);
+  for (const rec of missing) flash(`No se pudo leer ${rec.name || 'un asset'}`, 'error');
 }
 
 const TYPE_LABEL = { video: 'Video', audio: 'Audio', image: 'Imagen', text: 'Texto' };
@@ -466,6 +552,18 @@ export function renderMediaPool() {
       e.dataTransfer.effectAllowed = 'copy';
     });
     item.addEventListener('dblclick', () => onInsert(asset.id));
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'absolute top-1 left-1 z-10 w-4 h-4 rounded bg-black/70 text-slate-300 hover:text-red-400';
+    del.title = 'Quitar del proyecto';
+    del.innerHTML = '<i class="fa-solid fa-xmark text-[9px]"></i>';
+    del.addEventListener('mousedown', (e) => e.stopPropagation());
+    del.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      removeAsset(asset.id);
+    });
+    item.appendChild(del);
     attachTip(item, () => ({ title: asset.name, rows: assetRows(asset) }));
 
     const thumb = document.createElement('div');

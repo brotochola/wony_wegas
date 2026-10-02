@@ -165,7 +165,14 @@ function place(asset, track, startTime) {
     linkedClipId: null,
     color: BAR[type] || BAR.video,
     text: '',
-    textColor: '#00d2ff'
+    textColor: '#00d2ff',
+    x: 0,
+    y: 0,
+    scale: 1,
+    cropL: 0,
+    cropR: 0,
+    cropT: 0,
+    cropB: 0
   };
   const firstVideo = state.clips.length === 0 && type === 'video';
   hideSnap();
@@ -184,12 +191,16 @@ export function insertAsset(assetId) {
   if (!asset) return;
   let track = state.tracks.find(t => clipTypeFor(asset, t));
   if (!track) track = createTrack(asset.type === 'audio' ? 'audio' : 'video');
-  place(asset, track, state.currentTime);
+  place(asset, track, contentEnd());
 }
 
 export function addTextClip() {
-  const text = document.getElementById('text-gen-input').value.trim() || 'TEXTO';
+  const text = document.getElementById('text-gen-input').value.trim() || 'Texto';
   const textColor = document.getElementById('text-gen-color').value || '#00d2ff';
+  const fontSize = Math.max(8, parseFloat(document.getElementById('text-gen-size')?.value) || 72);
+  const fontFamily = document.getElementById('text-gen-font')?.value || 'Inter, sans-serif';
+  const strokeWidth = Math.max(0, parseFloat(document.getElementById('text-gen-stroke')?.value) || 0);
+  const strokeColor = document.getElementById('text-gen-stroke-color')?.value || '#000000';
   let track = state.tracks.find(t => t.type === 'video');
   if (!track) track = createTrack('video');
   const clip = {
@@ -209,7 +220,14 @@ export function addTextClip() {
     fadeOut: 0.3,
     muteAudio: true,
     linkedClipId: null,
-    color: BAR.text
+    color: BAR.text,
+    x: 0,
+    y: 0,
+    scale: 1,
+    fontSize,
+    fontFamily,
+    strokeWidth,
+    strokeColor
   };
   state.clips.push(clip);
   state.selectedClipId = clip.id;
@@ -239,6 +257,15 @@ export function deleteTrack(trackId) {
   notify();
 }
 
+export function toggleHidden(trackId) {
+  const track = state.tracks.find(t => t.id === trackId);
+  if (!track || track.type !== 'video') return;
+  track.hidden = !track.hidden;
+  pushHistory();
+  renderTimeline();
+  commitPlayback();
+}
+
 export function toggleMute(trackId) {
   const track = state.tracks.find(t => t.id === trackId);
   if (!track) return;
@@ -252,12 +279,20 @@ export function setZoom(value) {
   const el = document.getElementById('timeline-scroll-container');
   const old = state.zoom;
   const anchor = el ? state.currentTime * old - el.scrollLeft : 0;
-  state.zoom = Math.min(200, Math.max(8, Number(value) || 40));
+  state.zoom = Math.min(200, Math.max(0.25, Number(value) || 40));
   ensureSpan();
   renderTimeline();
   if (el) el.scrollLeft = Math.max(0, state.currentTime * state.zoom - anchor);
   const slider = document.getElementById('zoom-slider');
   if (slider && document.activeElement !== slider) slider.value = String(Math.round(state.zoom));
+}
+
+export function zoomToFit() {
+  const el = document.getElementById('timeline-scroll-container');
+  const end = Math.max(contentEnd(), 1);
+  const width = el?.clientWidth || 800;
+  setZoom(width / end);
+  if (el) el.scrollLeft = 0;
 }
 
 function rulerStep() {
@@ -504,6 +539,22 @@ function startMove(e, clip) {
   window.addEventListener('mouseup', up);
 }
 
+function layoutClip(clip) {
+  const el = document.querySelector(`[data-clip-id="${clip.id}"]`);
+  if (!el) return;
+  el.style.left = `${clip.startTime * state.zoom}px`;
+  el.style.width = `${Math.max(4, clip.duration * state.zoom)}px`;
+  const edges = overlapEdges(clip);
+  const fadeIn = el.querySelector('.clip-fade-in');
+  const fadeOut = el.querySelector('.clip-fade-out');
+  if (fadeIn) fadeIn.style.width = `${Math.max(clip.fadeIn || 0, edges.inn) * state.zoom}px`;
+  if (fadeOut) fadeOut.style.width = `${Math.max(clip.fadeOut || 0, edges.out) * state.zoom}px`;
+  const handleIn = el.querySelector('[data-handle="fade-in"]');
+  const handleOut = el.querySelector('[data-handle="fade-out"]');
+  if (handleIn) handleIn.style.left = `${Math.max(0, (clip.fadeIn || 0) * state.zoom)}px`;
+  if (handleOut) handleOut.style.right = `${Math.max(0, (clip.fadeOut || 0) * state.zoom)}px`;
+}
+
 function startTrim(e, clip, handle) {
   const originX = e.clientX;
   const originStart = clip.startTime;
@@ -534,13 +585,15 @@ function startTrim(e, clip, handle) {
       partner.duration = Math.max(0.2, partnerDur + dDur);
       partner.startOffset = Math.max(0, partnerOffset + dOff);
     }
-    renderTimeline();
+    layoutClip(clip);
+    if (partner) layoutClip(partner);
     previewNow();
   };
   const up = () => {
     window.removeEventListener('mousemove', move);
     window.removeEventListener('mouseup', up);
     pushHistory();
+    renderTimeline();
     commitPlayback();
     notify();
   };
@@ -561,13 +614,15 @@ function startFade(e, clip, handle) {
       partner.fadeIn = clip.fadeIn;
       partner.fadeOut = clip.fadeOut;
     }
-    renderTimeline();
+    layoutClip(clip);
+    if (partner) layoutClip(partner);
     previewNow();
   };
   const up = () => {
     window.removeEventListener('mousemove', move);
     window.removeEventListener('mouseup', up);
     pushHistory();
+    renderTimeline();
     commitPlayback();
   };
   window.addEventListener('mousemove', move);
@@ -623,7 +678,17 @@ export function renderTimeline() {
     del.title = 'Eliminar pista';
     del.innerHTML = '<i class="fa-solid fa-xmark"></i>';
     del.addEventListener('click', () => deleteTrack(track.id));
-    bottom.append(mute, del);
+    bottom.append(mute);
+    if (track.type === 'video') {
+      const eye = document.createElement('button');
+      eye.type = 'button';
+      eye.className = `px-1.5 py-0.5 rounded text-[10px] ${track.hidden ? 'bg-slate-900 text-slate-500' : 'bg-slate-700 text-slate-300'}`;
+      eye.innerHTML = `<i class="fa-solid ${track.hidden ? 'fa-eye-slash' : 'fa-eye'}"></i>`;
+      eye.title = track.hidden ? 'Mostrar imagen' : 'Ocultar imagen';
+      eye.addEventListener('click', () => toggleHidden(track.id));
+      bottom.append(eye);
+    }
+    bottom.append(del);
     header.append(top, bottom);
     headers.appendChild(header);
 
@@ -665,6 +730,16 @@ export function renderTimeline() {
       if (clip.trackId === track.id) lane.appendChild(buildClip(clip));
     }
     lanes.appendChild(lane);
+  }
+
+  if (state.inPoint != null || state.outPoint != null) {
+    const shade = document.createElement('div');
+    shade.className = 'absolute top-0 bottom-0 bg-cyan-400/10 pointer-events-none z-0';
+    const a = state.inPoint ?? 0;
+    const b = state.outPoint ?? state.span;
+    shade.style.left = `${Math.min(a, b) * state.zoom}px`;
+    shade.style.width = `${Math.max(0, Math.abs(b - a)) * state.zoom}px`;
+    lanes.appendChild(shade);
   }
 
   const height = (ruler?.offsetHeight || 24) + lanes.offsetHeight;
@@ -709,6 +784,21 @@ export function bindTimeline() {
     const factor = delta > 0 ? 1 / 1.12 : 1.12;
     setZoom(state.zoom * factor);
   }, { passive: false });
+  document.getElementById('playhead-hit')?.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    beginScrub();
+    scrubTo(timeFromRuler(e));
+    const move = (ev) => scrubTo(timeFromRuler(ev));
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      endScrub();
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  });
   ruler.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -769,16 +859,88 @@ export function splitSelected() {
   commitPlayback();
 }
 
-export function deleteSelected() {
-  const id = state.selectedClipId;
-  if (!id) return;
-  state.clips = state.clips.filter(c => c.id !== id);
-  for (const clip of state.clips) if (clip.linkedClipId === id) clip.linkedClipId = null;
+export function deleteSelected(ripple = true) {
+  const clip = selectedClip();
+  if (!clip) return;
+  const victims = [clip];
+  if (ripple && clip.type !== 'audio') {
+    const partner = partnerOf(clip);
+    if (partner) victims.push(partner);
+  }
+  const removed = new Set(victims.map(item => item.id));
+  if (ripple) {
+    for (const victim of victims) {
+      const end = victim.startTime + victim.duration;
+      for (const other of state.clips) {
+        if (removed.has(other.id) || other.trackId !== victim.trackId) continue;
+        if (other.startTime >= end - 0.02) other.startTime = Math.max(0, other.startTime - victim.duration);
+      }
+    }
+  }
+  state.clips = state.clips.filter(item => !removed.has(item.id));
+  for (const item of state.clips) if (removed.has(item.linkedClipId)) item.linkedClipId = null;
   state.selectedClipId = null;
   pushHistory();
   renderTimeline();
   commitPlayback();
   notify();
+}
+
+let clipClipboard = null;
+
+export function copySelected() {
+  const clip = selectedClip();
+  if (!clip) return;
+  const partner = partnerOf(clip);
+  clipClipboard = JSON.parse(JSON.stringify(partner ? [clip, partner] : [clip]));
+  flash('Clip copiado');
+}
+
+export function pasteClipboard() {
+  if (!clipClipboard?.length) {
+    flash('Nada para pegar');
+    return;
+  }
+  const base = Math.min(...clipClipboard.map(item => item.startTime));
+  const shift = state.currentTime - base;
+  const copies = clipClipboard.map(src => ({
+    ...src,
+    id: uid('clip'),
+    startTime: Math.max(0, src.startTime + shift),
+    linkedClipId: null
+  }));
+  const ids = new Map(clipClipboard.map((src, index) => [src.id, copies[index]]));
+  clipClipboard.forEach((src, index) => {
+    const linked = ids.get(src.linkedClipId);
+    if (linked) copies[index].linkedClipId = linked.id;
+  });
+  state.clips.push(...copies);
+  state.selectedClipId = copies[0].id;
+  pushHistory();
+  renderTimeline();
+  commitPlayback();
+  notify();
+}
+
+export function setInPoint() {
+  state.inPoint = state.currentTime;
+  if (state.outPoint != null && state.outPoint <= state.inPoint) state.outPoint = null;
+  pushHistory();
+  renderTimeline();
+}
+
+export function setOutPoint() {
+  state.outPoint = state.currentTime;
+  if (state.inPoint != null && state.inPoint >= state.outPoint) state.inPoint = null;
+  pushHistory();
+  renderTimeline();
+}
+
+export function clearPoints() {
+  state.inPoint = null;
+  state.outPoint = null;
+  pushHistory();
+  renderTimeline();
 }
 
 export function duplicateSelected() {

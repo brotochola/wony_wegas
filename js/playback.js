@@ -1,4 +1,4 @@
-import { state, assetById, formatTimecode, contentEnd } from './state.js';
+import { state, assetById, formatTimecode, contentEnd, pushHistory } from './state.js';
 
 let previewCanvas = null;
 let previewCtx = null;
@@ -15,6 +15,58 @@ let gen = 0;
 let held = false;
 let scrubbing = false;
 let onSpanGrow = () => {};
+const clipVideos = new Map();
+
+function parkEl(el) {
+  let bin = document.getElementById('media-bin');
+  if (!bin) {
+    bin = document.createElement('div');
+    bin.id = 'media-bin';
+    document.body.appendChild(bin);
+  }
+  bin.appendChild(el);
+}
+
+export function videoFor(clip) {
+  if (!clip || clip.type !== 'video') return null;
+  const cached = clipVideos.get(clip.id);
+  if (cached) return cached;
+  const asset = assetById(clip.assetId);
+  if (!asset?.url) return null;
+  const el = document.createElement('video');
+  el.muted = true;
+  el.playsInline = true;
+  el.preload = 'auto';
+  el.src = asset.url;
+  parkEl(el);
+  clipVideos.set(clip.id, el);
+  return el;
+}
+
+export function releaseClipVideo(id) {
+  const el = clipVideos.get(id);
+  if (!el) return;
+  el.pause();
+  el.removeAttribute('src');
+  el.load();
+  el.remove();
+  clipVideos.delete(id);
+}
+
+export function releaseAllClipVideos() {
+  for (const id of [...clipVideos.keys()]) releaseClipVideo(id);
+}
+
+export function sweepClipVideos() {
+  const ids = new Set(state.clips.map(clip => clip.id));
+  for (const id of [...clipVideos.keys()]) {
+    if (!ids.has(id)) releaseClipVideo(id);
+  }
+}
+
+export function pauseClipVideos() {
+  for (const el of clipVideos.values()) el.pause();
+}
 
 export function setSpanListener(fn) {
   onSpanGrow = fn;
@@ -47,6 +99,7 @@ export function initPreview() {
   previewCtx = previewCanvas.getContext('2d', { alpha: false });
   previewCtx.imageSmoothingQuality = 'high';
   resizePreview();
+  bindTransform();
 }
 
 export function measureFps(video) {
@@ -97,17 +150,39 @@ export function holdPreview(on) {
   }
 }
 
-export function drawContain(ctx, source, cw, ch) {
-  if (!source) return false;
-  if (source instanceof HTMLImageElement && !source.complete) return false;
-  const sw = source.videoWidth || source.naturalWidth || 0;
-  const sh = source.videoHeight || source.naturalHeight || 0;
-  if (!sw || !sh) return false;
-  if (source instanceof HTMLVideoElement && source.readyState < 2) return false;
-  const scale = Math.min(cw / sw, ch / sh);
-  const dw = sw * scale;
-  const dh = sh * scale;
-  ctx.drawImage(source, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
+function frameRect(source, cw, ch, clip) {
+  if (!source) return null;
+  if (source instanceof HTMLImageElement && !source.complete) return null;
+  const sw0 = source.videoWidth || source.naturalWidth || 0;
+  const sh0 = source.videoHeight || source.naturalHeight || 0;
+  if (!sw0 || !sh0) return null;
+  if (source instanceof HTMLVideoElement && source.readyState < 2) return null;
+  const cl = clip?.cropL || 0;
+  const cr = clip?.cropR || 0;
+  const ct = clip?.cropT || 0;
+  const cb = clip?.cropB || 0;
+  const sw = sw0 * (1 - cl - cr);
+  const sh = sh0 * (1 - ct - cb);
+  if (sw < 2 || sh < 2) return null;
+  const fit = Math.min(cw / sw, ch / sh) * (clip?.scale ?? 1);
+  const dw = sw * fit;
+  const dh = sh * fit;
+  return {
+    sx: sw0 * cl,
+    sy: sh0 * ct,
+    sw,
+    sh,
+    dx: (cw - dw) / 2 + (clip?.x || 0),
+    dy: (ch - dh) / 2 + (clip?.y || 0),
+    dw,
+    dh
+  };
+}
+
+export function drawContain(ctx, source, cw, ch, clip) {
+  const rect = frameRect(source, cw, ch, clip);
+  if (!rect) return false;
+  ctx.drawImage(source, rect.sx, rect.sy, rect.sw, rect.sh, rect.dx, rect.dy, rect.dw, rect.dh);
   return true;
 }
 
@@ -196,11 +271,15 @@ function gainFor(clip, time) {
   return (clip.volume ?? 1) * fadeMul(clip, local) * crossMul(clip, time);
 }
 
+export function clipGain(clip, time) {
+  return gainFor(clip, time);
+}
+
 export function visualClipsAt(time) {
   const out = [];
   for (let i = state.tracks.length - 1; i >= 0; i--) {
     const track = state.tracks[i];
-    if (track.type === 'audio' || track.muted) continue;
+    if (track.type === 'audio' || track.hidden) continue;
     const clips = state.clips
       .filter(c => c.trackId === track.id && c.type !== 'audio' && time >= c.startTime && time < c.startTime + c.duration)
       .sort((a, b) => a.startTime - b.startTime || (a.id < b.id ? -1 : 1));
@@ -226,19 +305,29 @@ function paintClip(ctx, w, h, clip, time) {
   ctx.save();
   ctx.globalAlpha = Math.max(0, Math.min(1, (clip.opacity ?? 1) * fadeMul(clip, local) * crossMul(clip, time)));
   if (clip.type === 'text') {
+    const size = clip.fontSize || Math.round(h / 15);
+    const x = w / 2 + (clip.x || 0);
+    const y = h / 2 + (clip.y || 0);
     ctx.fillStyle = clip.textColor || clip.color || '#00d2ff';
-    ctx.font = `bold ${Math.round(h / 15)}px Inter, sans-serif`;
+    ctx.font = `bold ${size}px ${clip.fontFamily || 'Inter, sans-serif'}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(clip.text || clip.name || '', w / 2, h / 2);
+    ctx.lineJoin = 'round';
+    const label = clip.text || clip.name || '';
+    if (clip.strokeWidth > 0) {
+      ctx.lineWidth = clip.strokeWidth;
+      ctx.strokeStyle = clip.strokeColor || '#000000';
+      ctx.strokeText(label, x, y);
+    }
+    ctx.fillText(label, x, y);
+  } else if (clip.type === 'video') {
+    const el = videoFor(clip);
+    const asset = assetById(clip.assetId);
+    if (asset?.unreadable || el?.error || asset?.element?.error) drawUnsupported(ctx, w, h, asset?.name || clip.name);
+    else if (el) drawContain(ctx, el, w, h, clip);
   } else {
     const asset = assetById(clip.assetId);
-    if (asset?.unreadable || asset?.element?.error) {
-      drawUnsupported(ctx, w, h, asset?.name || clip.name);
-    } else {
-      const source = clip.type === 'image' || clip.type === 'video' ? asset?.element : null;
-      if (source) drawContain(ctx, source, w, h);
-    }
+    if (asset?.element) drawContain(ctx, asset.element, w, h, clip);
   }
   ctx.restore();
 }
@@ -246,7 +335,6 @@ function paintClip(ctx, w, h, clip, time) {
 export function paint(ctx, w, h, time) {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, w, h);
-  // ponytail: one <video> per file, so overlapping clips of the same file share one frame
   for (const clip of visualClipsAt(time)) paintClip(ctx, w, h, clip, time);
   ctx.globalAlpha = 1;
 }
@@ -254,33 +342,73 @@ export function paint(ctx, w, h, time) {
 function paintPreview() {
   if (!previewCtx || held) return;
   paint(previewCtx, previewCanvas.width, previewCanvas.height, state.currentTime);
+  syncTransformBox();
+}
+
+function waitMediaTime(el, target, ms) {
+  return new Promise((resolve) => {
+    const start = performance.now();
+    const tick = () => {
+      if (el.currentTime >= target - 0.012 || performance.now() - start > ms) {
+        resolve();
+        return;
+      }
+      requestAnimationFrame(tick);
+    };
+    tick();
+  });
 }
 
 export function renderPaused() {
   if (held) return;
   const token = ++gen;
   const time = state.currentTime;
+  sweepClipVideos();
   const clips = visualClipsAt(time);
   (async () => {
     for (const clip of clips) {
       if (clip.type !== 'video') continue;
-      const asset = assetById(clip.assetId);
-      if (!asset?.element) continue;
-      await seekMedia(asset.element, sourceTime(clip, time), 700);
+      const el = videoFor(clip);
+      if (!el) continue;
+      await seekMedia(el, sourceTime(clip, time), 700);
       if (token !== gen || held) return;
     }
     if (token !== gen || state.isPlaying || held) return;
     paint(previewCtx, previewCanvas.width, previewCanvas.height, time);
+    syncTransformBox();
   })();
 }
 
-export async function drawAtTime(ctx, w, h, time) {
+export async function drawAtTime(ctx, w, h, time, opts = {}) {
+  sweepClipVideos();
   const clips = visualClipsAt(time);
+  const used = new Set();
+  const frame = 1 / (state.fps || 30);
   for (const clip of clips) {
     if (clip.type !== 'video') continue;
-    const asset = assetById(clip.assetId);
-    if (!asset?.element) continue;
-    await seekMedia(asset.element, sourceTime(clip, time), 1200);
+    const el = videoFor(clip);
+    if (!el) continue;
+    used.add(clip.id);
+    const target = clampMediaTime(el, sourceTime(clip, time));
+    const ahead = target - el.currentTime;
+    if (el.readyState >= 2 && ahead >= -frame && ahead <= frame * 0.35) {
+      /* el decoder ya está en este fotograma */
+    } else if (opts.fast && ahead > 0 && ahead < 0.8 && el.readyState >= 2 && !el.seeking) {
+      if (el.paused) {
+        try { await el.play(); } catch { /* seek */ }
+      }
+      if (!el.paused) await waitMediaTime(el, target, Math.min(400, ahead * 1000 + 50));
+      if (target - el.currentTime > frame) {
+        el.pause();
+        await seekMedia(el, target, 800);
+      }
+    } else {
+      if (!el.paused) el.pause();
+      await seekMedia(el, target, opts.fast ? 800 : 1200);
+    }
+  }
+  for (const [id, el] of clipVideos) {
+    if (!used.has(id)) el.pause();
   }
   paint(ctx, w, h, time);
 }
@@ -381,14 +509,14 @@ function syncElements() {
 const videoSeeking = new WeakSet();
 
 function syncVideos() {
+  sweepClipVideos();
   const visuals = visualClipsAt(state.currentTime).filter(c => c.type === 'video');
   const used = new Set();
   for (let i = visuals.length - 1; i >= 0; i--) {
     const clip = visuals[i];
-    const asset = assetById(clip.assetId);
-    if (!asset?.element || used.has(asset.id)) continue;
-    used.add(asset.id);
-    const el = asset.element;
+    const el = videoFor(clip);
+    if (!el || used.has(clip.id)) continue;
+    used.add(clip.id);
     const target = clampMediaTime(el, sourceTime(clip, state.currentTime));
     el.playbackRate = 1;
     if (!videoSeeking.has(el) && Math.abs(el.currentTime - target) > 0.25) {
@@ -403,8 +531,8 @@ function syncVideos() {
     }
     if (el.paused) el.play().catch(() => {});
   }
-  for (const asset of state.mediaPool) {
-    if (asset.type === 'video' && asset.element && !used.has(asset.id)) asset.element.pause();
+  for (const [id, el] of clipVideos) {
+    if (!used.has(id)) el.pause();
   }
 }
 
@@ -413,6 +541,7 @@ function pauseElements() {
     asset.element?.pause?.();
     asset.audioEl?.pause?.();
   }
+  pauseClipVideos();
 }
 
 function updateGains() {
@@ -517,6 +646,12 @@ export function seekToStart() { seek(0); }
 
 export function seekToEnd() { seek(contentEnd()); }
 
+export function repaint() {
+  if (!previewCtx || held) return;
+  paint(previewCtx, previewCanvas.width, previewCanvas.height, state.currentTime);
+  syncTransformBox();
+}
+
 export function previewNow() {
   movePlayhead();
   updateTimecode();
@@ -559,4 +694,130 @@ export function scrubTo(time) {
 export function endScrub() {
   scrubbing = false;
   commitPlayback();
+}
+
+function textRect(clip, w, h) {
+  const size = clip.fontSize || Math.round(h / 15);
+  const ctx = previewCtx;
+  ctx.save();
+  ctx.font = `bold ${size}px ${clip.fontFamily || 'Inter, sans-serif'}`;
+  const measured = ctx.measureText(clip.text || clip.name || '').width;
+  ctx.restore();
+  const dw = Math.max(size, Math.min(w, measured + size * 0.5));
+  const dh = size * 1.5;
+  return {
+    dx: w / 2 + (clip.x || 0) - dw / 2,
+    dy: h / 2 + (clip.y || 0) - dh / 2,
+    dw,
+    dh
+  };
+}
+
+function selectedVisual() {
+  const clip = state.clips.find(item => item.id === state.selectedClipId);
+  if (!clip || clip.type === 'audio') return null;
+  const track = state.tracks.find(item => item.id === clip.trackId);
+  if (!track || track.hidden || track.type === 'audio') return null;
+  const time = state.currentTime;
+  if (time < clip.startTime || time >= clip.startTime + clip.duration) return null;
+  return clip;
+}
+
+function canvasPoint(event) {
+  const rect = previewCanvas.getBoundingClientRect();
+  return {
+    x: ((event.clientX - rect.left) / rect.width) * previewCanvas.width,
+    y: ((event.clientY - rect.top) / rect.height) * previewCanvas.height
+  };
+}
+
+export function syncTransformBox() {
+  const box = document.getElementById('transform-box');
+  const stage = document.getElementById('preview-stage');
+  if (!box || !stage || !previewCanvas) return;
+  const clip = selectedVisual();
+  if (!clip) {
+    box.classList.add('hidden');
+    return;
+  }
+  let rect = null;
+  if (clip.type === 'text') rect = textRect(clip, previewCanvas.width, previewCanvas.height);
+  else {
+    const source = clip.type === 'video' ? videoFor(clip) : assetById(clip.assetId)?.element;
+    rect = frameRect(source, previewCanvas.width, previewCanvas.height, clip);
+  }
+  if (!rect) {
+    box.classList.add('hidden');
+    return;
+  }
+  const canvasRect = previewCanvas.getBoundingClientRect();
+  const stageRect = stage.getBoundingClientRect();
+  const sx = canvasRect.width / previewCanvas.width;
+  const sy = canvasRect.height / previewCanvas.height;
+  box.classList.remove('hidden');
+  box.style.left = `${canvasRect.left - stageRect.left + rect.dx * sx}px`;
+  box.style.top = `${canvasRect.top - stageRect.top + rect.dy * sy}px`;
+  box.style.width = `${Math.max(8, rect.dw * sx)}px`;
+  box.style.height = `${Math.max(8, rect.dh * sy)}px`;
+}
+
+function bindTransform() {
+  const move = document.getElementById('transform-move');
+  const scale = document.getElementById('transform-scale');
+  if (!move || !scale) return;
+  move.addEventListener('mousedown', (event) => {
+    if (event.button !== 0) return;
+    const clip = selectedVisual();
+    if (!clip) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const origin = canvasPoint(event);
+    const x0 = clip.x || 0;
+    const y0 = clip.y || 0;
+    const drag = (ev) => {
+      const point = canvasPoint(ev);
+      clip.x = x0 + (point.x - origin.x);
+      clip.y = y0 + (point.y - origin.y);
+      repaint();
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', drag);
+      window.removeEventListener('mouseup', up);
+      pushHistory();
+      document.dispatchEvent(new CustomEvent('clip-selected'));
+    };
+    window.addEventListener('mousemove', drag);
+    window.addEventListener('mouseup', up);
+  });
+  scale.addEventListener('mousedown', (event) => {
+    if (event.button !== 0) return;
+    const clip = selectedVisual();
+    if (!clip) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const origin = canvasPoint(event);
+    const center = {
+      x: previewCanvas.width / 2 + (clip.x || 0),
+      y: previewCanvas.height / 2 + (clip.y || 0)
+    };
+    const startDist = Math.max(8, Math.hypot(origin.x - center.x, origin.y - center.y));
+    const startScale = clip.scale ?? 1;
+    const startSize = clip.fontSize || Math.round(previewCanvas.height / 15);
+    const drag = (ev) => {
+      const point = canvasPoint(ev);
+      const dist = Math.hypot(point.x - center.x, point.y - center.y);
+      const factor = dist / startDist;
+      if (clip.type === 'text') clip.fontSize = Math.max(8, Math.round(startSize * factor));
+      else clip.scale = Math.max(0.1, Math.min(6, startScale * factor));
+      repaint();
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', drag);
+      window.removeEventListener('mouseup', up);
+      pushHistory();
+      document.dispatchEvent(new CustomEvent('clip-selected'));
+    };
+    window.addEventListener('mousemove', drag);
+    window.addEventListener('mouseup', up);
+  });
 }

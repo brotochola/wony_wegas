@@ -1,5 +1,11 @@
 import { state, assetById, contentEnd, flash } from './state.js';
-import { audioContext, drawAtTime, holdPreview, renderPaused } from './playback.js';
+import { audioContext, drawAtTime, holdPreview, renderPaused, clipGain, pauseClipVideos } from './playback.js';
+
+let exportToken = 0;
+
+export function cancelExport() {
+  exportToken++;
+}
 
 const MUX = {
   'avc1.640028': 'avc',
@@ -45,6 +51,8 @@ export function applyExportPreset(val) {
   if (val === '1080p') { width.value = 1920; height.value = 1080; }
   else if (val === '4k') { width.value = 3840; height.value = 2160; }
   else if (val === '720p') { width.value = 1280; height.value = 720; }
+  else if (val === '9:16') { width.value = 1080; height.value = 1920; }
+  else if (val === '1:1') { width.value = 1080; height.value = 1080; }
   checkCodecSupport();
 }
 
@@ -67,8 +75,27 @@ function audibleBuffers() {
   });
 }
 
-async function mixAudio(duration) {
+function exportRange() {
+  const end = contentEnd();
+  const start = Math.min(end, state.inPoint == null ? 0 : Math.max(0, state.inPoint));
+  const stop = state.outPoint == null ? end : Math.max(start, Math.min(end, state.outPoint));
+  return { start, end: Math.max(start, stop) };
+}
+
+function scheduleGain(param, clip, origin, from, to) {
+  const step = 1 / 30;
+  let cursor = from;
+  param.setValueAtTime(Math.max(0, clipGain(clip, origin + from)), from);
+  while (cursor < to - 0.0001) {
+    const next = Math.min(to, cursor + step);
+    param.linearRampToValueAtTime(Math.max(0, clipGain(clip, origin + next)), next);
+    cursor = next;
+  }
+}
+
+async function mixAudio(start, end) {
   if (!audibleBuffers()) return null;
+  const duration = Math.max(0.05, end - start);
   const sampleRate = 48000;
   const length = Math.max(1, Math.ceil(duration * sampleRate));
   const offline = new OfflineAudioContext(2, length, sampleRate);
@@ -78,31 +105,27 @@ async function mixAudio(duration) {
     if (!track || track.muted) continue;
     const asset = assetById(clip.assetId);
     if (!asset?.audioBuffer) continue;
-    const offset = clip.startOffset || 0;
+    const clipEnd = clip.startTime + clip.duration;
+    const from = Math.max(start, clip.startTime);
+    const to = Math.min(end, clipEnd);
+    if (to - from <= 0.02) continue;
+    const offset = (clip.startOffset || 0) + (from - clip.startTime);
     const available = asset.audioBuffer.duration - offset;
     if (available <= 0.02) continue;
     const src = offline.createBufferSource();
     src.buffer = asset.audioBuffer;
     const gain = offline.createGain();
-    const vol = clip.volume ?? 1;
-    const t0 = Math.max(0, clip.startTime);
-    const t1 = t0 + clip.duration;
-    const fadeIn = clip.fadeIn || 0;
-    const fadeOut = clip.fadeOut || 0;
-    const fadeInEnd = Math.min(t1, t0 + fadeIn);
-    const g = gain.gain;
-    g.setValueAtTime(fadeIn > 0 ? 0 : vol, t0);
-    if (fadeIn > 0 && fadeInEnd > t0) g.linearRampToValueAtTime(vol, fadeInEnd);
-    if (fadeOut > 0 && t1 > fadeInEnd) {
-      const fadeStart = Math.max(fadeInEnd, t1 - fadeOut);
-      if (fadeStart > fadeInEnd + 0.001) g.setValueAtTime(vol, fadeStart);
-      g.linearRampToValueAtTime(0, t1);
-    }
+    scheduleGain(gain.gain, clip, start, from - start, to - start);
     src.connect(gain);
     gain.connect(offline.destination);
-    src.start(t0, offset, Math.min(clip.duration, available));
+    src.start(from - start, offset, Math.min(to - from, available));
   }
   return offline.startRendering();
+}
+
+function fileName(ext) {
+  const raw = (state.projectName || 'Wony_Wegas').replace(/[^\w\-]+/g, '_');
+  return `${raw || 'Wony_Wegas'}.${ext}`;
 }
 
 function download(blob, name) {
@@ -138,7 +161,7 @@ function encodePcm(encoder, buffer) {
   }
 }
 
-async function exportWebCodecs(canvas, ctx, settings, duration, mixed) {
+async function exportWebCodecs(canvas, ctx, settings, range, mixed, token) {
   const { Muxer, ArrayBufferTarget } = await import('https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.mjs');
   const { width, height, fps, bitrate, codec } = settings;
   let audioOn = false;
@@ -180,12 +203,18 @@ async function exportWebCodecs(canvas, ctx, settings, duration, mixed) {
     });
     encodePcm(audioEncoder, mixed);
   }
-  const total = Math.max(1, Math.round(duration * fps));
+  const span = Math.max(1 / fps, range.end - range.start);
+  const total = Math.max(1, Math.round(span * fps));
   const bar = document.getElementById('exp-progress-bar');
   const label = document.getElementById('exp-progress-label');
   const percent = document.getElementById('exp-progress-percent');
   for (let frame = 0; frame < total; frame++) {
-    await drawAtTime(ctx, width, height, frame / fps);
+    if (token !== exportToken) {
+      videoEncoder.close();
+      audioEncoder?.close();
+      return false;
+    }
+    await drawAtTime(ctx, width, height, range.start + frame / fps, { fast: true });
     const videoFrame = new VideoFrame(canvas, { timestamp: Math.round((frame * 1e6) / fps) });
     videoEncoder.encode(videoFrame, { keyFrame: frame % fps === 0 });
     videoFrame.close();
@@ -193,15 +222,16 @@ async function exportWebCodecs(canvas, ctx, settings, duration, mixed) {
     bar.style.width = `${pct}%`;
     percent.textContent = `${pct}%`;
     label.textContent = `Fotograma ${frame + 1} / ${total}`;
-    if (frame % 3 === 0) await new Promise(r => setTimeout(r, 0));
+    await new Promise(r => setTimeout(r, 0));
   }
   await videoEncoder.flush();
   if (audioEncoder) await audioEncoder.flush();
   muxer.finalize();
-  download(new Blob([muxer.target.buffer], { type: 'video/mp4' }), 'Render_Vegas_Pro.mp4');
+  download(new Blob([muxer.target.buffer], { type: 'video/mp4' }), fileName('mp4'));
+  return true;
 }
 
-async function exportRecorder(canvas, ctx, settings, duration, mixed) {
+async function exportRecorder(canvas, ctx, settings, range, mixed, token) {
   const { width, height, fps } = settings;
   const stream = canvas.captureStream(fps);
   let source = null;
@@ -224,12 +254,19 @@ async function exportRecorder(canvas, ctx, settings, duration, mixed) {
     rec.onstop = () => resolve();
   });
   rec.start();
-  const total = Math.max(1, Math.round(duration * fps));
+  const span = Math.max(1 / fps, range.end - range.start);
+  const total = Math.max(1, Math.round(span * fps));
   const bar = document.getElementById('exp-progress-bar');
   const label = document.getElementById('exp-progress-label');
   const percent = document.getElementById('exp-progress-percent');
   for (let frame = 0; frame < total; frame++) {
-    await drawAtTime(ctx, width, height, frame / fps);
+    if (token !== exportToken) {
+      rec.stop();
+      await done;
+      try { source?.stop(); } catch { /* ended */ }
+      return false;
+    }
+    await drawAtTime(ctx, width, height, range.start + frame / fps, { fast: true });
     const pct = Math.round(((frame + 1) / total) * 100);
     bar.style.width = `${pct}%`;
     percent.textContent = `${pct}%`;
@@ -239,25 +276,42 @@ async function exportRecorder(canvas, ctx, settings, duration, mixed) {
   rec.stop();
   await done;
   try { source?.stop(); } catch { /* ended */ }
-  download(new Blob(chunks, { type: mime || 'video/webm' }), 'Render_Vegas_Pro.webm');
+  if (token !== exportToken) return false;
+  download(new Blob(chunks, { type: mime || 'video/webm' }), fileName('webm'));
+  return true;
+}
+
+function missingDecodedAudio() {
+  return state.clips.some(clip => {
+    if (clip.muteAudio || (clip.type !== 'video' && clip.type !== 'audio')) return false;
+    const track = state.tracks.find(item => item.id === clip.trackId);
+    if (!track || track.muted) return false;
+    const asset = assetById(clip.assetId);
+    return !!asset && !asset.audioBuffer;
+  });
 }
 
 export async function startExport() {
-  const duration = contentEnd();
+  const range = exportRange();
   const btn = document.getElementById('btn-start-export');
+  const abortBtn = document.getElementById('btn-abort-export');
   const box = document.getElementById('export-progress-box');
   const label = document.getElementById('exp-progress-label');
   const bar = document.getElementById('exp-progress-bar');
   const percent = document.getElementById('exp-progress-percent');
-  if (duration <= 0) {
+  if (range.end - range.start <= 0.05) {
     flash('No hay clips para exportar');
     return;
   }
+  const token = ++exportToken;
   btn.disabled = true;
+  abortBtn?.classList.remove('hidden');
   box.classList.remove('hidden');
   bar.style.width = '0%';
   percent.textContent = '0%';
-  label.textContent = 'Preparando…';
+  const audioGap = missingDecodedAudio();
+  if (audioGap) flash('Hay clips con audio sin decodificar. El export puede salir sin ese sonido.');
+  label.textContent = audioGap ? 'Audio incompleto. Preparando…' : 'Preparando…';
   holdPreview(true);
   const settings = exportSettings();
   const canvas = document.createElement('canvas');
@@ -266,30 +320,40 @@ export async function startExport() {
   const ctx = canvas.getContext('2d', { alpha: false });
   let mixed = null;
   let wantedAudio = state.clips.some(c => (c.type === 'video' || c.type === 'audio') && !c.muteAudio);
+  let finished = false;
   try {
-    mixed = await mixAudio(duration);
+    mixed = await mixAudio(range.start, range.end);
   } catch (err) {
     console.warn('mix', err);
     mixed = null;
   }
   try {
-    if ('VideoEncoder' in window) {
+    if (token !== exportToken) {
+      label.textContent = 'Cancelado';
+    } else if ('VideoEncoder' in window) {
       try {
-        await exportWebCodecs(canvas, ctx, settings, duration, mixed);
+        finished = await exportWebCodecs(canvas, ctx, settings, range, mixed, token);
       } catch (err) {
-        console.warn('WebCodecs', err);
-        label.textContent = 'WebCodecs falló, grabando…';
-        await exportRecorder(canvas, ctx, settings, duration, mixed);
+        if (token !== exportToken) {
+          label.textContent = 'Cancelado';
+        } else {
+          console.warn('WebCodecs', err);
+          label.textContent = 'WebCodecs falló, grabando…';
+          finished = await exportRecorder(canvas, ctx, settings, range, mixed, token);
+        }
       }
     } else {
-      await exportRecorder(canvas, ctx, settings, duration, mixed);
+      finished = await exportRecorder(canvas, ctx, settings, range, mixed, token);
     }
-    label.textContent = mixed || !wantedAudio ? 'Exportación lista' : 'Listo, sin audio: el navegador no decodificó la pista';
+    if (token !== exportToken || finished === false) label.textContent = 'Cancelado';
+    else if (finished) label.textContent = mixed || !wantedAudio ? 'Exportación lista' : 'Listo, sin ese audio: el navegador no lo decodificó';
   } catch (err) {
     console.error(err);
-    label.textContent = 'No se pudo exportar';
+    label.textContent = token === exportToken ? 'No se pudo exportar' : 'Cancelado';
   } finally {
     btn.disabled = false;
+    abortBtn?.classList.add('hidden');
+    pauseClipVideos();
     holdPreview(false);
     renderPaused();
   }
