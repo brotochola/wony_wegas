@@ -1,0 +1,102 @@
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #12151e; }
+::-webkit-scrollbar-thumb { background: #2e354a; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #00d2ff; }
+
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.clip-handle-fade { clip-path: polygon(0 0, 100% 0, 0 100%); }
+.clip-handle-fade-out { clip-path: polygon(0 0, 100% 0, 100% 100%); }
+
+.clip-fade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 5;
+}
+.clip-fade-in { left: 0; clip-path: polygon(0 0, 100% 0, 0 100%); }
+.clip-fade-out { right: 0; clip-path: polygon(0 0, 100% 0, 100% 100%); }
+
+#toast-stack {
+  position: fixed;
+  top: 56px;
+  right: 16px;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 380px;
+  pointer-events: none;
+}
+.toast {
+  background: #1a1e2b;
+  border: 1px solid #2e354a;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+.toast-error { border-color: #f87171; color: #fecaca; }
+
+.timeline-ruler-tick { border-left: 1px solid rgba(255, 255, 255, 0.2); }
+
+#track-header-list { overflow: hidden; }
+
+#media-tip {
+  position: fixed;
+  z-index: 80;
+  width: max-content;
+  max-width: 280px;
+  background: #1a1e2b;
+  border: 1px solid #2e354a;
+  border-radius: 6px;
+  padding: 8px 10px;
+  pointer-events: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  font-size: 11px;
+}
+
+#media-tip .tip-name {
+  font-weight: 600;
+  color: #e2e8f0;
+  margin-bottom: 4px;
+  word-break: break-all;
+}
+
+#media-tip .tip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  color: #94a3b8;
+  line-height: 1.45;
+}
+
+#media-tip .tip-row b {
+  color: #e2e8f0;
+  font-weight: 500;
+  text-align: right;
+}
+
+/* ponytail: a real on-screen box. opacity:0 makes Chrome skip frames on some codecs */
+#media-bin {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  width: 8px;
+  height: 8px;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+
+#media-bin video,
+#media-bin audio {
+  width: 160px;
+  height: 90px;
+}
