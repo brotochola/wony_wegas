@@ -224,3 +224,4 @@
 .ai-doubt { text-decoration: underline wavy #f59e0b; text-underline-offset: 3px; }
 .ai-gone { color: #64748b; text-decoration: line-through; }
 .ai-meta { color: #64748b; font-size: 11px; margin-bottom: 6px; }
+.ai-pick { background: rgba(16, 185, 129, 0.28); }

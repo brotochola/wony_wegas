@@ -10,6 +10,7 @@ import { renderTimeline } from './timeline.js';
 import { seek, commitPlayback, audioContext } from './playback.js';
 import { SR, splitPoints, speechSpans, cutParams, keepRanges, encodeWav } from './ai-shared.js';
 import { createCaptions, fitCaptions } from './captions-ui.js';
+import { aiSupport, findHighlights, translateWords, detectLanguage } from './smart.js';
 
 const SETTINGS_KEY = 'wony-ai';
 const DOUBT = 0.5; // words under this confidence are marked for review
@@ -223,11 +224,19 @@ async function getVad(asset) {
 
 const snap = (t) => Math.round(t * state.fps) / state.fps;
 
-// The pieces of one clip to keep, in file time.
-function planCuts(clip, vad) {
+// What to keep of a file: speech with a little air (silences), or the chosen sentences (highlights).
+function keepFor(asset) {
+  if (previewMode === 'highlights') return hlMem.get(asset.id)?.ranges || null;
+  const vad = vadMem.get(asset.id);
+  if (!vad) return null;
   const spans = speechSpans(vad.probs, vad.hop);
-  if (!spans.length) return { pieces: [], removed: 0, cuts: 0, noSpeech: true };
-  const keep = keepRanges(spans, vad.duration, cutParams(settings.aggressiveness));
+  if (!spans.length) return [];
+  return keepRanges(spans, vad.duration, cutParams(settings.aggressiveness));
+}
+
+// The pieces of one clip to keep, in file time.
+function planCuts(clip, keep) {
+  if (!keep.length) return { pieces: [], removed: 0, cuts: 0, noSpeech: true };
   const a = clip.startOffset || 0;
   const b = a + clip.duration;
   const pieces = [];
@@ -258,14 +267,17 @@ function planCuts(clip, vad) {
 }
 
 let previewOn = false;
+let previewMode = 'silence'; // or 'highlights'
+const hlMem = new Map(); // asset id -> { ranges, ids, summary, title, method }
 
 function refreshPreview() {
   const t = target();
-  const vad = t && vadMem.get(t.asset.id);
-  const info = $('ai-cut-info');
-  if (!previewOn || !t || !vad) {
+  const keep = t && keepFor(t.asset);
+  const info = $(previewMode === 'highlights' ? 'ai-hl-info' : 'ai-cut-info');
+  $(previewMode === 'highlights' ? 'ai-cut-info' : 'ai-hl-info').textContent = '';
+  if (!previewOn || !t || !keep) {
     state.cutPreview = null;
-    info.textContent = previewOn && t ? 'Press "Find silences" for this clip.' : '';
+    info.textContent = previewOn && t ? (previewMode === 'highlights' ? 'Press "Find highlights" for this clip.' : 'Press "Find silences" for this clip.') : '';
     renderTimeline();
     syncButtons();
     return;
@@ -273,7 +285,7 @@ function refreshPreview() {
   const regions = [];
   let removed = 0, cuts = 0, noSpeech = false;
   for (const u of t.units) {
-    const plan = planCuts(u.clip, vad);
+    const plan = planCuts(u.clip, keep);
     noSpeech ||= !!plan.noSpeech;
     removed += plan.removed;
     cuts += plan.cuts;
@@ -283,12 +295,18 @@ function refreshPreview() {
   }
   state.cutPreview = { regions };
   info.textContent = noSpeech && !cuts
-    ? 'No speech found.'
+    ? (previewMode === 'highlights' ? 'No highlights in this clip.' : 'No speech found.')
     : cuts
-      ? `Removes ${formatDuration(removed)} in ${cuts} cut${cuts === 1 ? '' : 's'}: ${formatDuration(t.total)} → ${formatDuration(t.total - removed)}`
+      ? previewMode === 'highlights'
+        ? `Keeps ${formatDuration(t.total - removed)} of ${formatDuration(t.total)} in ${hlParts(t)} part${hlParts(t) === 1 ? '' : 's'}`
+        : `Removes ${formatDuration(removed)} in ${cuts} cut${cuts === 1 ? '' : 's'}: ${formatDuration(t.total)} → ${formatDuration(t.total - removed)}`
       : 'Nothing to cut at this setting.';
   renderTimeline();
   syncButtons();
+}
+
+function hlParts(t) {
+  return hlMem.get(t.asset.id)?.ranges.length || 0;
 }
 
 async function findSilences() {
@@ -297,7 +315,87 @@ async function findSilences() {
   await withBusy(async () => {
     await getVad(t.asset);
     previewOn = true;
+    previewMode = 'silence';
     refreshPreview();
+  });
+}
+
+// ---------- highlights ----------
+
+function currentTranscript(t) {
+  return t ? transcriptMem.get(transcriptKey(t.asset)) : null;
+}
+
+function hlSeconds(t) {
+  const v = $('ai-hl-length').value;
+  return v.endsWith('%') ? t.total * parseFloat(v) / 100 : parseFloat(v);
+}
+
+async function findHl() {
+  const t = target();
+  const tr = currentTranscript(t);
+  if (!tr) { flash('Transcribe first', 'error'); return; }
+  const seconds = Math.min(hlSeconds(t), t.total);
+  const words = tr.words.map(w => ({ w: w.w, s: w.start, e: w.end }));
+  // only the part of the file that is on the timeline
+  const onTimeline = words.filter(w => timelineTime(t.asset, t.clip.type, (w.s + w.e) / 2) != null);
+  await withBusy(async () => {
+    progress(0, "Starting Chrome's built-in AI");
+    const lang = settings.language === 'auto' ? (await detectLanguage(onTimeline.map(w => w.w).join(' '))) || 'en' : settings.language;
+    const result = await findHighlights(onTimeline, seconds, lang, progress);
+    hlMem.set(t.asset.id, result);
+    previewOn = true;
+    previewMode = 'highlights';
+    renderSummary(result);
+    refreshPreview();
+    renderTranscript();
+  });
+}
+
+function renderSummary(result) {
+  const box = $('ai-summary');
+  box.replaceChildren();
+  if (!result) { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  if (result.title) {
+    const h = document.createElement('p');
+    h.className = 'font-bold text-slate-100';
+    h.textContent = result.title;
+    box.append(h);
+  }
+  const points = (result.summary || '').split(/\n+/).map(l => l.replace(/^[\s*•\-–]+/, '').trim()).filter(Boolean);
+  if (points.length) {
+    const ul = document.createElement('ul');
+    ul.className = 'list-disc pl-4 space-y-0.5';
+    for (const p of points) {
+      const li = document.createElement('li');
+      li.textContent = p;
+      ul.append(li);
+    }
+    box.append(ul);
+  }
+  const how = document.createElement('p');
+  how.className = 'text-slate-500 mt-1';
+  how.textContent = `Chosen with ${result.method} · ${result.ids.length} sentences, in green in the transcript`;
+  box.append(how);
+}
+
+// ---------- translated subtitles ----------
+
+async function translateCaptions() {
+  const t = target();
+  const tr = currentTranscript(t);
+  if (!tr) { flash('Transcribe first', 'error'); return; }
+  const to = $('ai-tr-lang').value;
+  // corrected subtitle words win over the raw transcript
+  const fixed = state.clips.find(c => c.type === 'captions' && c.captionAsset === t.asset.id && !c.captionLang);
+  const words = fixed?.words?.length ? fixed.words : tr.words.map(w => ({ w: w.w, s: w.start, e: w.end }));
+  await withBusy(async () => {
+    progress(0, 'Starting the translator');
+    const from = settings.language === 'auto' ? (await detectLanguage(words.map(w => w.w).join(' '))) || 'en' : settings.language;
+    if (from === to) throw new Error('The transcript is already in that language');
+    const out = await translateWords(words, from, to, progress);
+    createCaptions(t.asset, out.map(w => ({ w: w.w, start: w.s, end: w.e })), settings.captionStyle || 'tiktok', { lang: to });
   });
 }
 
@@ -342,12 +440,13 @@ function applyUnit(unit, plan) {
 
 function applyCuts() {
   const t = target();
-  const vad = t && vadMem.get(t.asset.id);
-  if (!vad) return;
+  const keep = t && keepFor(t.asset);
+  if (!keep) return;
+  const mode = previewMode;
   let removed = 0, cuts = 0, first = null;
   // right to left, so each ripple only moves pieces that are already done
   for (const u of [...t.units].reverse()) {
-    const plan = planCuts(u.clip, vad);
+    const plan = planCuts(u.clip, keep);
     if (!plan.cuts || !plan.pieces.length) continue;
     first = applyUnit(u, plan);
     removed += plan.removed;
@@ -362,8 +461,12 @@ function applyCuts() {
   renderTimeline();
   commitPlayback();
   document.dispatchEvent(new CustomEvent('clip-selected'));
-  flash(`Removed ${formatDuration(removed)} in ${cuts} cuts. Ctrl+Z undoes it.`);
+  flash(mode === 'highlights'
+    ? `Kept the highlights, removed ${formatDuration(removed)}. Ctrl+Z undoes it.`
+    : `Removed ${formatDuration(removed)} in ${cuts} cuts. Ctrl+Z undoes it.`);
   $('ai-cut-info').textContent = '';
+  $('ai-hl-info').textContent = '';
+  renderTranscript();
 }
 
 // ---------- transcription ----------
@@ -473,6 +576,7 @@ async function renderTranscript() {
   }
   shownKey = key;
   const type = t.clip.type;
+  const picks = previewOn && previewMode === 'highlights' ? hlMem.get(t.asset.id)?.ranges : null;
   const frag = document.createDocumentFragment();
   for (const w of tr.words) {
     const span = document.createElement('span');
@@ -481,6 +585,7 @@ async function renderTranscript() {
     const at = timelineTime(t.asset, type, (w.start + w.end) / 2);
     if (at == null) span.classList.add('ai-gone');
     if (w.conf != null && w.conf < DOUBT) span.classList.add('ai-doubt');
+    if (picks && picks.some(([a, b]) => w.start >= a - 0.01 && w.end <= b + 0.01)) span.classList.add('ai-pick');
     span.title = `${formatDuration(w.start)}${w.conf != null ? ` · ${Math.round(w.conf * 100)}% sure` : ''}${at == null ? ' · not on the timeline' : ''}`;
     span.dataset.s = w.start;
     frag.append(span, ' ');
@@ -501,6 +606,11 @@ function syncButtons() {
   $('ai-transcribe').disabled = busy || !has;
   $('ai-apply-cuts').disabled = busy || !has || !state.cutPreview?.regions?.length;
   $('ai-add-captions').disabled = busy || !has || !shownKey;
+  const ai = aiSupport();
+  $('ai-find-hl').disabled = busy || !has || !shownKey || !(ai.summarizer || ai.prompt);
+  $('ai-keep-hl').disabled = busy || !has || !(previewOn && previewMode === 'highlights' && state.cutPreview?.regions?.length);
+  $('ai-translate').disabled = busy || !has || !shownKey || !ai.translator;
+  $('ai-chrome-note').classList.toggle('hidden', ai.summarizer || ai.prompt || ai.translator);
   $('ai-target').textContent = has
     ? `${t.asset.name} · ${t.units.length > 1 ? `${t.units.length} pieces · ` : ''}${formatDuration(t.total)}${t.units[0].group.length > 1 ? ' · video + audio' : ''}`
     : 'Select a video or audio clip.';
@@ -524,6 +634,13 @@ export function initAi() {
   $('ai-lang').addEventListener('change', (e) => { settings.language = e.target.value; saveSettings(); renderTranscript(); });
   $('opt-groq-key').addEventListener('change', (e) => { settings.groqKey = e.target.value.trim(); saveSettings(); syncButtons(); });
   $('ai-find-silences').addEventListener('click', findSilences);
+  $('ai-find-hl').addEventListener('click', findHl);
+  $('ai-keep-hl').addEventListener('click', applyCuts);
+  $('ai-translate').addEventListener('click', translateCaptions);
+  $('ai-hl-length').value = settings.hlLength || '60';
+  $('ai-hl-length').addEventListener('change', (e) => { settings.hlLength = e.target.value; saveSettings(); });
+  $('ai-tr-lang').value = settings.translateTo || 'en';
+  $('ai-tr-lang').addEventListener('change', (e) => { settings.translateTo = e.target.value; saveSettings(); });
   $('ai-apply-cuts').addEventListener('click', applyCuts);
   $('ai-transcribe').addEventListener('click', transcribe);
   $('ai-cap-style').value = settings.captionStyle || 'tiktok';

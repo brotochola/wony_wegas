@@ -150,7 +150,7 @@
           </button>
         </div>
       </div>
-      <div id="tab-content-ai" class="hidden flex-1 flex flex-col p-3 gap-3 overflow-hidden text-xs min-h-0">
+      <div id="tab-content-ai" class="hidden flex-1 flex flex-col p-3 gap-3 overflow-y-auto text-xs min-h-0">
         <p id="ai-target" class="text-slate-400 truncate">Select a video or audio clip.</p>
         <div class="space-y-2">
           <span class="font-bold text-cyan-400 uppercase tracking-wider block">Remove silences</span>
@@ -167,7 +167,7 @@
           </div>
           <p id="ai-cut-info" class="text-slate-400 min-h-[1rem]"></p>
         </div>
-        <div class="flex-1 flex flex-col min-h-0 gap-2 pt-3 border-t border-vegas-border">
+        <div class="flex-1 flex flex-col min-h-fit gap-2 pt-3 border-t border-vegas-border">
           <div class="flex items-center gap-2">
             <span class="font-bold text-cyan-400 uppercase tracking-wider mr-auto">Transcript</span>
             <select id="ai-lang" title="Language" class="bg-vegas-bg border border-vegas-border rounded px-1.5 py-1 text-slate-100">
@@ -190,10 +190,33 @@
             <div class="h-1.5 bg-vegas-bg border border-vegas-border rounded overflow-hidden"><div id="ai-progress-bar" class="h-full bg-cyan-500 w-0"></div></div>
             <p id="ai-progress-text" class="text-slate-400 mt-1"></p>
           </div>
-          <div id="ai-transcript" class="flex-1 min-h-0 overflow-y-auto bg-vegas-bg rounded border border-vegas-border/50 p-2 leading-6 select-text"></div>
+          <div id="ai-transcript" class="flex-1 min-h-[9rem] overflow-y-auto bg-vegas-bg rounded border border-vegas-border/50 p-2 leading-6 select-text"></div>
           <div class="flex gap-2 items-center">
             <select id="ai-cap-style" title="Subtitle style" class="bg-vegas-bg border border-vegas-border rounded px-1.5 py-1 text-slate-100"></select>
             <button type="button" id="ai-add-captions" disabled class="flex-1 bg-pink-600 hover:bg-pink-500 text-white font-bold py-1.5 rounded disabled:opacity-40" title="Make subtitles from this transcript; they follow later cuts">Add subtitles</button>
+          </div>
+          <div class="flex gap-2 items-center">
+            <select id="ai-tr-lang" title="Language of the translated subtitles" class="bg-vegas-bg border border-vegas-border rounded px-1.5 py-1 text-slate-100">
+              <option value="en">English</option><option value="es">Español</option><option value="pt">Português</option>
+              <option value="fr">Français</option><option value="it">Italiano</option><option value="de">Deutsch</option>
+              <option value="ja">日本語</option><option value="ko">한국어</option><option value="zh">中文</option>
+              <option value="ru">Русский</option><option value="ar">العربية</option><option value="hi">हिन्दी</option>
+            </select>
+            <button type="button" id="ai-translate" disabled class="flex-1 bg-vegas-border hover:bg-slate-700 text-slate-100 font-bold py-1.5 rounded disabled:opacity-40" title="Translate whole sentences with Chrome's built-in Translator and add them as subtitles">Translate subtitles</button>
+          </div>
+          <div class="pt-2 border-t border-vegas-border space-y-2">
+            <span class="font-bold text-cyan-400 uppercase tracking-wider block">Highlights</span>
+            <div class="flex gap-2 items-center">
+              <select id="ai-hl-length" title="How long the highlight should be" class="bg-vegas-bg border border-vegas-border rounded px-1.5 py-1 text-slate-100">
+                <option value="30">30 s</option><option value="60">1 min</option><option value="90">1 min 30</option>
+                <option value="180">3 min</option><option value="25%">25%</option><option value="50%">50%</option>
+              </select>
+              <button type="button" id="ai-find-hl" disabled class="flex-1 bg-vegas-border hover:bg-slate-700 text-slate-100 font-bold py-1.5 rounded disabled:opacity-40" title="Chrome's built-in AI picks the most important sentences">Find highlights</button>
+              <button type="button" id="ai-keep-hl" disabled class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold py-1.5 rounded disabled:opacity-40" title="Cut everything else (one undo step)">Keep only these</button>
+            </div>
+            <p id="ai-hl-info" class="text-slate-400 min-h-[1rem]"></p>
+            <div id="ai-summary" class="hidden text-slate-300 bg-vegas-bg rounded border border-vegas-border/50 p-2 max-h-32 overflow-y-auto select-text"></div>
+            <p id="ai-chrome-note" class="hidden text-amber-300">Highlights and translation use Chrome's built-in AI (Chrome 138 or later on a desktop with enough memory). This browser doesn't offer it.</p>
           </div>
         </div>
       </div>

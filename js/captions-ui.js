@@ -25,32 +25,38 @@ export function fitCaptions() {
   }
 }
 
-function captionsTrack() {
-  let track = state.tracks.find(t => t.captions);
+function captionsTrack(lang) {
+  const key = lang || 'source';
+  let track = state.tracks.find(t => t.captions === key || (t.captions === true && key === 'source'));
   if (!track) {
-    track = { id: uid('track'), name: 'Subtitles', type: 'video', muted: false, captions: true };
+    track = { id: uid('track'), name: lang ? `Subtitles ${lang.toUpperCase()}` : 'Subtitles', type: 'video', muted: false, captions: key };
     state.tracks.unshift(track); // first track is drawn on top
   }
   return track;
 }
 
-// words: [{ w, start, end }] in file time, from the transcript
-export function createCaptions(asset, words, style = 'tiktok') {
+// words: [{ w, start, end }] in file time, from the transcript (or its translation, with opts.lang)
+export function createCaptions(asset, words, style = 'tiktok', opts = {}) {
   const span = mediaSpan(asset.id);
   if (!span) { flash('Put the clip on the timeline first', 'error'); return; }
+  const lang = opts.lang || null;
   const st = CAPTION_STYLES[style] || CAPTION_STYLES.tiktok;
   const list = words.map(w => ({ w: w.w, s: w.start, e: w.end }));
-  let clip = state.clips.find(c => c.type === 'captions' && c.captionAsset === asset.id);
+  const original = state.clips.find(c => c.type === 'captions' && c.captionAsset === asset.id && !c.captionLang);
+  let clip = state.clips.find(c => c.type === 'captions' && c.captionAsset === asset.id && (c.captionLang || null) === lang);
   if (clip) {
     clip.words = list;
     clip.capStyle = style;
   } else {
+    // a translation goes under the original subtitles, so both can be on screen
+    const below = lang && original ? Math.round(state.projectHeight * st.size * 1.6) : 0;
     clip = {
       id: uid('clip'),
-      trackId: captionsTrack().id,
+      trackId: captionsTrack(lang).id,
       assetId: null,
       captionAsset: asset.id,
-      name: `Subtitles · ${asset.name}`,
+      captionLang: lang,
+      name: `Subtitles${lang ? ` ${lang.toUpperCase()}` : ''} · ${asset.name}`,
       type: 'captions',
       startTime: span.start,
       duration: span.end - span.start,
@@ -63,7 +69,7 @@ export function createCaptions(asset, words, style = 'tiktok') {
       linkedClipId: null,
       color: '#db2777',
       x: 0,
-      y: Math.round(state.projectHeight * st.y),
+      y: Math.round(state.projectHeight * st.y) + below,
       scale: 1,
       fontSize: null,
       words: list,
@@ -81,7 +87,7 @@ export function createCaptions(asset, words, style = 'tiktok') {
   renderTimeline();
   commitPlayback();
   document.dispatchEvent(new CustomEvent('clip-selected'));
-  flash(`Subtitles added: ${list.length} words. Fix any word in the inspector.`);
+  flash(`${lang ? `${lang.toUpperCase()} subtitles` : 'Subtitles'} added: ${list.length} words. Fix any word in the inspector.`);
 }
 
 function selected() {
