@@ -13,6 +13,7 @@ import {
 import { openExportModal, closeExportModal, applyExportPreset, checkCodecSupport, startExport, cancelExport } from './export.js';
 import { initAi } from './ai.js';
 import { initRecorder } from './record.js';
+import { initCaptionsUi } from './captions-ui.js';
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -481,11 +482,13 @@ function updateInspector() {
   form.classList.remove('hidden');
   const visual = clip.type !== 'audio';
   document.getElementById('insp-video-opts').classList.toggle('hidden', clip.type === 'audio');
-  document.getElementById('insp-audio-opts').classList.toggle('hidden', clip.type === 'image' || clip.type === 'text');
+  const captions = clip.type === 'captions';
+  document.getElementById('insp-audio-opts').classList.toggle('hidden', clip.type === 'image' || clip.type === 'text' || captions);
   document.getElementById('insp-transform').classList.toggle('hidden', !visual);
-  document.getElementById('insp-crop').classList.toggle('hidden', clip.type === 'text' || clip.type === 'audio');
+  document.getElementById('insp-crop').classList.toggle('hidden', clip.type === 'text' || clip.type === 'audio' || captions);
   document.getElementById('insp-text').classList.toggle('hidden', clip.type !== 'text');
-  document.getElementById('insp-scale-wrap').classList.toggle('hidden', clip.type === 'text');
+  document.getElementById('insp-captions').classList.toggle('hidden', !captions);
+  document.getElementById('insp-scale-wrap').classList.toggle('hidden', clip.type === 'text' || captions);
   document.getElementById('insp-name').value = clip.name;
   document.getElementById('insp-start').value = clip.startTime.toFixed(2);
   document.getElementById('insp-duration').value = clip.duration.toFixed(2);
@@ -874,6 +877,7 @@ function boot() {
   bindUi();
   initAi();
   initRecorder();
+  initCaptionsUi();
   renderMediaPool();
   pushHistory();
   renderTimeline();

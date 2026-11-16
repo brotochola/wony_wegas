@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Montserrat:wght@800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/editor.css">
   <script>
     tailwind.config = {
@@ -191,6 +191,10 @@
             <p id="ai-progress-text" class="text-slate-400 mt-1"></p>
           </div>
           <div id="ai-transcript" class="flex-1 min-h-0 overflow-y-auto bg-vegas-bg rounded border border-vegas-border/50 p-2 leading-6 select-text"></div>
+          <div class="flex gap-2 items-center">
+            <select id="ai-cap-style" title="Subtitle style" class="bg-vegas-bg border border-vegas-border rounded px-1.5 py-1 text-slate-100"></select>
+            <button type="button" id="ai-add-captions" disabled class="flex-1 bg-pink-600 hover:bg-pink-500 text-white font-bold py-1.5 rounded disabled:opacity-40" title="Make subtitles from this transcript; they follow later cuts">Add subtitles</button>
+          </div>
         </div>
       </div>
     </section>
@@ -344,6 +348,44 @@
                 <label class="text-slate-400 block mb-1" for="insp-stroke-color">Color</label>
                 <input type="color" id="insp-stroke-color" class="w-full h-8 bg-vegas-bg border border-vegas-border rounded p-1 cursor-pointer">
               </div>
+            </div>
+          </div>
+          <div id="insp-captions" class="space-y-3 pt-2 border-t border-vegas-border hidden">
+            <span class="text-pink-400 font-bold block">Subtitles</span>
+            <p id="cap-source" class="text-slate-500 truncate"></p>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-slate-400 block mb-1" for="cap-style">Style</label>
+                <select id="cap-style" class="w-full bg-vegas-bg border border-vegas-border rounded px-2 py-1 text-slate-100"></select>
+              </div>
+              <div>
+                <label class="text-slate-400 block mb-1" for="cap-words">Words at a time</label>
+                <input type="number" min="1" max="16" id="cap-words" class="w-full bg-vegas-bg border border-vegas-border rounded px-2 py-1 text-slate-100">
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <div>
+                <label class="text-slate-400 block mb-1" for="cap-size">Size</label>
+                <input type="number" min="8" max="400" id="cap-size" class="w-full bg-vegas-bg border border-vegas-border rounded px-2 py-1 text-slate-100">
+              </div>
+              <div>
+                <label class="text-slate-400 block mb-1" for="cap-color">Text</label>
+                <input type="color" id="cap-color" class="w-full h-7 bg-vegas-bg border border-vegas-border rounded p-0.5 cursor-pointer">
+              </div>
+              <div>
+                <label class="text-slate-400 block mb-1" for="cap-highlight">Word said</label>
+                <input type="color" id="cap-highlight" class="w-full h-7 bg-vegas-bg border border-vegas-border rounded p-0.5 cursor-pointer">
+              </div>
+            </div>
+            <label class="flex items-center gap-2 text-slate-300 cursor-pointer"><input type="checkbox" id="cap-upper" class="accent-pink-400"> Capital letters</label>
+            <div>
+              <label class="text-slate-400 block mb-1" for="cap-text">Words (fix mistakes here, then click outside)</label>
+              <textarea id="cap-text" rows="7" spellcheck="true" class="w-full bg-vegas-bg border border-vegas-border rounded px-2 py-1.5 text-slate-100 leading-5 select-text"></textarea>
+            </div>
+            <p class="text-slate-500">Drag the subtitles on the preview to move them; the corner handle changes the size.</p>
+            <div class="flex gap-2">
+              <button type="button" id="cap-srt" class="flex-1 bg-vegas-border hover:bg-slate-700 text-slate-100 font-bold py-1.5 rounded">Download .srt</button>
+              <button type="button" id="cap-vtt" class="flex-1 bg-vegas-border hover:bg-slate-700 text-slate-100 font-bold py-1.5 rounded">Download .vtt</button>
             </div>
           </div>
           <button type="button" id="insp-use-project" title="Set the project to this clip's size and frame rate" class="w-full bg-vegas-border hover:bg-slate-700 text-slate-100 font-bold py-2 rounded">

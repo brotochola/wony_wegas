@@ -1,3 +1,4 @@
+import { drawCaptions, captionRect, styleOf } from './captions.js';
 import { state, assetById, formatTimecode, contentEnd, pushHistory } from './state.js';
 
 let previewCanvas = null;
@@ -320,6 +321,8 @@ function paintClip(ctx, w, h, clip, time) {
       ctx.strokeText(label, x, y);
     }
     ctx.fillText(label, x, y);
+  } else if (clip.type === 'captions') {
+    drawCaptions(ctx, w, h, clip, time);
   } else if (clip.type === 'video') {
     const el = videoFor(clip);
     const asset = assetById(clip.assetId);
@@ -742,6 +745,7 @@ export function syncTransformBox() {
   }
   let rect = null;
   if (clip.type === 'text') rect = textRect(clip, previewCanvas.width, previewCanvas.height);
+  else if (clip.type === 'captions') rect = captionRect(previewCtx, previewCanvas.width, previewCanvas.height, clip, state.currentTime);
   else {
     const source = clip.type === 'video' ? videoFor(clip) : assetById(clip.assetId)?.element;
     rect = frameRect(source, previewCanvas.width, previewCanvas.height, clip);
@@ -802,12 +806,14 @@ function bindTransform() {
     };
     const startDist = Math.max(8, Math.hypot(origin.x - center.x, origin.y - center.y));
     const startScale = clip.scale ?? 1;
-    const startSize = clip.fontSize || Math.round(previewCanvas.height / 15);
+    const startSize = clip.fontSize || (clip.type === 'captions'
+      ? Math.round(state.projectHeight * styleOf(clip).size)
+      : Math.round(previewCanvas.height / 15));
     const drag = (ev) => {
       const point = canvasPoint(ev);
       const dist = Math.hypot(point.x - center.x, point.y - center.y);
       const factor = dist / startDist;
-      if (clip.type === 'text') clip.fontSize = Math.max(8, Math.round(startSize * factor));
+      if (clip.type === 'text' || clip.type === 'captions') clip.fontSize = Math.max(8, Math.round(startSize * factor));
       else clip.scale = Math.max(0.1, Math.min(6, startScale * factor));
       repaint();
     };

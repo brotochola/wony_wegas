@@ -9,6 +9,7 @@ import { state, uid, assetById, pushHistory, flash, formatDuration } from './sta
 import { renderTimeline } from './timeline.js';
 import { seek, commitPlayback, audioContext } from './playback.js';
 import { SR, splitPoints, speechSpans, cutParams, keepRanges, encodeWav } from './ai-shared.js';
+import { createCaptions, fitCaptions } from './captions-ui.js';
 
 const SETTINGS_KEY = 'wony-ai';
 const DOUBT = 0.5; // words under this confidence are marked for review
@@ -356,6 +357,7 @@ function applyCuts() {
   state.selectedClipId = first;
   previewOn = false;
   state.cutPreview = null;
+  fitCaptions(); // subtitles of this file shrink with it
   pushHistory(); // one step: Ctrl+Z brings everything back
   renderTimeline();
   commitPlayback();
@@ -466,6 +468,7 @@ async function renderTranscript() {
   if (!tr) {
     shownKey = '';
     box.innerHTML = '<p class="text-slate-500">No transcript yet for this file with this engine and language.</p>';
+    syncButtons();
     return;
   }
   shownKey = key;
@@ -486,6 +489,7 @@ async function renderTranscript() {
   meta.className = 'ai-meta';
   meta.textContent = `${tr.words.length} words · ${tr.engine.replace(':', ' ')} · ${tr.device}`;
   box.replaceChildren(meta, frag);
+  syncButtons();
 }
 
 // ---------- ui ----------
@@ -496,6 +500,7 @@ function syncButtons() {
   $('ai-find-silences').disabled = busy || !has;
   $('ai-transcribe').disabled = busy || !has;
   $('ai-apply-cuts').disabled = busy || !has || !state.cutPreview?.regions?.length;
+  $('ai-add-captions').disabled = busy || !has || !shownKey;
   $('ai-target').textContent = has
     ? `${t.asset.name} · ${t.units.length > 1 ? `${t.units.length} pieces · ` : ''}${formatDuration(t.total)}${t.units[0].group.length > 1 ? ' · video + audio' : ''}`
     : 'Select a video or audio clip.';
@@ -521,6 +526,14 @@ export function initAi() {
   $('ai-find-silences').addEventListener('click', findSilences);
   $('ai-apply-cuts').addEventListener('click', applyCuts);
   $('ai-transcribe').addEventListener('click', transcribe);
+  $('ai-cap-style').value = settings.captionStyle || 'tiktok';
+  $('ai-cap-style').addEventListener('change', (e) => { settings.captionStyle = e.target.value; saveSettings(); });
+  $('ai-add-captions').addEventListener('click', () => {
+    const t = target();
+    const tr = t && transcriptMem.get(transcriptKey(t.asset));
+    if (!tr) return;
+    createCaptions(t.asset, tr.words, settings.captionStyle || 'tiktok');
+  });
   $('ai-transcript').addEventListener('click', (e) => {
     const span = e.target.closest('.ai-word');
     const t = target();
