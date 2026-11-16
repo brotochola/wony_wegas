@@ -26,6 +26,17 @@ Opening the file directly (`file://`) will not load the editor. The scripts are 
 
 Press `?` for the shortcut list.
 
+## On a phone
+
+The editor fits a phone screen: the preview on top, the timeline below it, and a bar at the bottom with **Media**, **Record**, **AI**, **Text**, and **Clip**. Each one opens its panel as a sheet over the timeline; tap it again or the × to close it.
+
+- Tap **+** on a file to put it at the end of the timeline.
+- Tap a clip to select it. Tap it again for its menu (split, unlink, duplicate, delete).
+- Hold a clip for a moment, then drag it to move it. A quick drag scrolls the timeline instead.
+- Drag the edges of a clip to trim it. Pinch the timeline to zoom.
+- Tap the ruler or an empty spot on a track to move the playhead.
+- In **Record**, the round button on the preview switches between the front and back camera.
+
 ## Record
 
 **Record** in Project Media films you with the webcam, records the microphone alone, or both. Pick the camera and the microphone, watch the preview and the level, and press **Start recording**. When you stop, the take goes into Project Media and, if you leave the box checked, at the end of the timeline. In Chrome it is also saved as a file, so a saved project can open it again.

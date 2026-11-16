@@ -123,6 +123,9 @@ async function openStream() {
     $('rec-preview').srcObject = stream;
     $('rec-preview').play().catch(() => {});
     const s = stream.getVideoTracks()[0]?.getSettings() || {};
+    // a mirror only for the camera that looks at you; the back camera shows the world as it is
+    $('rec-preview').classList.toggle('-scale-x-100', s.facingMode !== 'environment');
+    $('rec-flip').classList.toggle('hidden', $('rec-camera').options.length < 2);
     $('rec-status').textContent = `${s.width || '?'}×${s.height || '?'}${s.frameRate ? ` · ${Math.round(s.frameRate)} fps` : ''}${mode.audio ? ' · with sound' : ' · no sound'}`;
   } else {
     $('rec-status').textContent = 'Microphone ready';
@@ -143,7 +146,7 @@ function syncModeUi() {
   $('rec-preview').classList.toggle('hidden', !mode.video);
   $('rec-mic-only').classList.toggle('hidden', mode.video);
   $('rec-level-wrap').classList.toggle('hidden', !mode.audio);
-  $('rec-camera').disabled = $('rec-mic').disabled = !!recorder;
+  $('rec-camera').disabled = $('rec-mic').disabled = $('rec-flip').disabled = !!recorder;
 }
 
 function clock() {
@@ -271,6 +274,15 @@ export function initRecorder() {
     });
   }
   $('rec-camera').addEventListener('change', (e) => { prefs.camera = e.target.value; savePrefs(); openStream(); });
+  // phones: front and back camera with one tap
+  $('rec-flip').addEventListener('click', () => {
+    const select = $('rec-camera');
+    if (recorder || select.options.length < 2) return;
+    select.selectedIndex = (select.selectedIndex + 1) % select.options.length;
+    prefs.camera = select.value;
+    savePrefs();
+    openStream();
+  });
   $('rec-mic').addEventListener('change', (e) => { prefs.mic = e.target.value; savePrefs(); openStream(); });
   $('rec-to-timeline').addEventListener('change', (e) => { prefs.toTimeline = e.target.checked; savePrefs(); });
   $('rec-save-file').addEventListener('change', (e) => { prefs.saveFile = e.target.checked; savePrefs(); });

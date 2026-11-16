@@ -1,4 +1,5 @@
 import { drawCaptions, captionRect, styleOf } from './captions.js';
+import { follow } from './pointer.js';
 import { state, assetById, formatTimecode, contentEnd, pushHistory } from './state.js';
 
 let previewCanvas = null;
@@ -769,7 +770,7 @@ function bindTransform() {
   const move = document.getElementById('transform-move');
   const scale = document.getElementById('transform-scale');
   if (!move || !scale) return;
-  move.addEventListener('mousedown', (event) => {
+  move.addEventListener('pointerdown', (event) => {
     if (event.button !== 0) return;
     const clip = selectedVisual();
     if (!clip) return;
@@ -785,15 +786,12 @@ function bindTransform() {
       repaint();
     };
     const up = () => {
-      window.removeEventListener('mousemove', drag);
-      window.removeEventListener('mouseup', up);
       pushHistory();
       document.dispatchEvent(new CustomEvent('clip-selected'));
     };
-    window.addEventListener('mousemove', drag);
-    window.addEventListener('mouseup', up);
+    follow(event, drag, up);
   });
-  scale.addEventListener('mousedown', (event) => {
+  scale.addEventListener('pointerdown', (event) => {
     if (event.button !== 0) return;
     const clip = selectedVisual();
     if (!clip) return;
@@ -818,12 +816,9 @@ function bindTransform() {
       repaint();
     };
     const up = () => {
-      window.removeEventListener('mousemove', drag);
-      window.removeEventListener('mouseup', up);
       pushHistory();
       document.dispatchEvent(new CustomEvent('clip-selected'));
     };
-    window.addEventListener('mousemove', drag);
-    window.addEventListener('mouseup', up);
+    follow(event, drag, up);
   });
 }

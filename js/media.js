@@ -742,8 +742,14 @@ export function hideTip() {
   document.getElementById('media-tip')?.classList.add('hidden');
 }
 
+// Hover details only where there is a real mouse: touches also send mouse events, and a tip
+// that pops up on every tap gets in the way.
+let lastPointer = 'mouse';
+window.addEventListener('pointerdown', (e) => { lastPointer = e.pointerType; }, true);
+
 export function attachTip(el, getInfo) {
   el.addEventListener('mouseenter', (e) => {
+    if (lastPointer !== 'mouse' || window.matchMedia?.('(hover: none)').matches) return;
     const info = getInfo();
     if (info) showTip(e.clientX, e.clientY, info.title, info.rows);
   });
@@ -782,13 +788,26 @@ export function renderMediaPool() {
     del.className = 'absolute top-1 left-1 z-10 w-4 h-4 rounded bg-black/70 text-slate-300 hover:text-red-400';
     del.title = 'Remove from project';
     del.innerHTML = '<i class="fa-solid fa-xmark text-[9px]"></i>';
-    del.addEventListener('mousedown', (e) => e.stopPropagation());
+    del.addEventListener('pointerdown', (e) => e.stopPropagation());
     del.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       removeAsset(asset.id);
     });
     item.appendChild(del);
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'media-add absolute top-1 right-1 z-10 w-6 h-6 rounded bg-cyan-500 text-slate-950 hover:bg-cyan-300 shadow';
+    add.title = 'Add to the end of the timeline';
+    add.innerHTML = '<i class="fa-solid fa-plus text-[11px]"></i>';
+    add.addEventListener('pointerdown', (e) => e.stopPropagation());
+    add.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onInsert(asset.id);
+      document.dispatchEvent(new CustomEvent('media-inserted'));
+    });
+    item.appendChild(add);
     attachTip(item, () => ({ title: asset.name, rows: assetRows(asset) }));
 
     const thumb = document.createElement('div');

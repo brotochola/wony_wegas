@@ -14,6 +14,7 @@ import { openExportModal, closeExportModal, applyExportPreset, checkCodecSupport
 import { initAi } from './ai.js';
 import { initRecorder } from './record.js';
 import { initCaptionsUi } from './captions-ui.js';
+import { follow } from './pointer.js';
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -804,11 +805,59 @@ function onKeyDown(e) {
   }
 }
 
+// Phones: a bottom bar opens the side panels as sheets over the timeline.
+function bindMobile() {
+  const body = document.body;
+  const bar = document.getElementById('mobile-bar');
+  if (!bar) return;
+  let current = '';
+  const sync = () => {
+    const open = body.classList.contains('sheet-left') || body.classList.contains('sheet-right');
+    for (const btn of bar.querySelectorAll('[data-sheet]')) btn.classList.toggle('on', open && btn.dataset.sheet === current);
+  };
+  const close = () => {
+    body.classList.remove('sheet-left', 'sheet-right');
+    sync();
+  };
+  const open = (name) => {
+    body.classList.remove('sheet-left', 'sheet-right');
+    if (name === 'clip') body.classList.add('sheet-right');
+    else {
+      switchTab(name);
+      body.classList.add('sheet-left');
+    }
+    current = name;
+    sync();
+  };
+  for (const btn of bar.querySelectorAll('[data-sheet]')) {
+    btn.addEventListener('click', () => {
+      const name = btn.dataset.sheet;
+      if (name === 'record') {
+        close();
+        document.getElementById('btn-record').click();
+        return;
+      }
+      const isOpen = body.classList.contains(name === 'clip' ? 'sheet-right' : 'sheet-left');
+      if (isOpen && current === name) close();
+      else open(name);
+    });
+  }
+  for (const btn of document.querySelectorAll('[data-close-sheet]')) btn.addEventListener('click', close);
+  for (const name of TABS) {
+    document.getElementById(`tab-btn-${name}`).addEventListener('click', () => { current = name; sync(); });
+  }
+  // after adding a file, show the timeline it went to
+  document.addEventListener('media-inserted', () => { if (getComputedStyle(bar).display !== 'none') close(); });
+  document.addEventListener('clip-selected', () => {
+    document.getElementById('mobile-clip-dot').classList.toggle('hidden', !state.selectedClipId);
+  });
+}
+
 function bindTimelineResize() {
   const handle = document.getElementById('timeline-resize');
   const panel = document.getElementById('timeline-panel');
   if (!handle || !panel) return;
-  handle.addEventListener('mousedown', (event) => {
+  handle.addEventListener('pointerdown', (event) => {
     if (event.button !== 0) return;
     event.preventDefault();
     const startY = event.clientY;
@@ -818,12 +867,9 @@ function bindTimelineResize() {
       panel.style.height = `${Math.max(160, Math.min(window.innerHeight * 0.75, next))}px`;
     };
     const up = () => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
       renderTimeline();
     };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
+    follow(event, move, up);
   });
 }
 
@@ -875,6 +921,7 @@ function boot() {
   bindTimeline();
   bindTimelineResize();
   bindUi();
+  bindMobile();
   initAi();
   initRecorder();
   initCaptionsUi();

@@ -1,5 +1,6 @@
 import { state, uid, assetById, pushHistory, contentEnd, flash } from './state.js';
 import { assetRows, attachTip, hideTip, frameShot, primeFrames, setShotHook } from './media.js';
+import { follow, isTouch, tapOrHold, bindPinch } from './pointer.js';
 import {
   beginScrub, scrubTo, endScrub, commitPlayback, previewNow
 } from './playback.js';
@@ -568,7 +569,7 @@ function buildClip(clip) {
   const trimL = makeHandle('absolute top-0 bottom-0 left-0 w-2 hover:bg-cyan-400/50 cursor-ew-resize z-20', 'trim-left', 'Trim start');
   const trimR = makeHandle('absolute top-0 bottom-0 right-0 w-2 hover:bg-cyan-400/50 cursor-ew-resize z-20', 'trim-right', 'Trim end');
   for (const handle of [fadeIn, fadeOut, trimL, trimR]) {
-    handle.addEventListener('mousedown', (e) => {
+    handle.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
       e.preventDefault();
       e.stopPropagation();
@@ -578,13 +579,32 @@ function buildClip(clip) {
   }
   el.append(fadeIn, fadeOut, trimL, trimR);
 
-  el.addEventListener('mousedown', (e) => {
+  el.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || e.target.closest('[data-handle]')) return;
+    if (isTouch(e)) {
+      // a finger: tap selects (tap a selected clip for its menu), hold and drag moves,
+      // a quick drag scrolls the timeline
+      tapOrHold(e, {
+        onTap: (ev) => {
+          const again = state.selectedClipId === clip.id;
+          state.selectedClipId = clip.id;
+          notify();
+          renderTimeline();
+          if (again) showContextMenu(ev.clientX, ev.clientY, true);
+        },
+        onHold: () => {
+          state.selectedClipId = clip.id;
+          notify();
+          startMove(e, clip, el);
+        },
+      });
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
     state.selectedClipId = clip.id;
     notify();
-    startMove(e, clip);
+    startMove(e, clip, el);
   });
   el.addEventListener('contextmenu', (e) => {
     e.preventDefault();
@@ -650,13 +670,13 @@ function hideGhosts() {
   document.getElementById('clip-ghost-link')?.remove();
 }
 
-function startMove(e, clip) {
+function startMove(e, clip, clipEl) {
   const origin = clip.startTime;
   const partner = partnerOf(clip);
   const partnerOrigin = partner ? partner.startTime : 0;
-  const clipEl = e.currentTarget;
   const grab = (e.clientX - clipEl.getBoundingClientRect().left) / state.zoom;
   clipEl.style.opacity = '0.4';
+  clipEl.classList.add('clip-lifted');
   const partnerEl = partner ? document.querySelector(`[data-clip-id="${partner.id}"]`) : null;
   if (partnerEl) partnerEl.style.opacity = '0.4';
   document.body.style.cursor = 'grabbing';
@@ -688,8 +708,6 @@ function startMove(e, clip) {
     }
   };
   const up = () => {
-    window.removeEventListener('mousemove', move);
-    window.removeEventListener('mouseup', up);
     document.body.style.cursor = '';
     hideSnap();
     hideTip();
@@ -702,8 +720,7 @@ function startMove(e, clip) {
     commitPlayback();
     notify();
   };
-  window.addEventListener('mousemove', move);
-  window.addEventListener('mouseup', up);
+  follow(e, move, up);
 }
 
 function layoutClip(clip) {
@@ -762,15 +779,12 @@ function startTrim(e, clip, handle) {
     previewNow();
   };
   const up = () => {
-    window.removeEventListener('mousemove', move);
-    window.removeEventListener('mouseup', up);
     pushHistory();
     renderTimeline();
     commitPlayback();
     notify();
   };
-  window.addEventListener('mousemove', move);
-  window.addEventListener('mouseup', up);
+  follow(e, move, up);
 }
 
 function startFade(e, clip, handle) {
@@ -791,21 +805,25 @@ function startFade(e, clip, handle) {
     previewNow();
   };
   const up = () => {
-    window.removeEventListener('mousemove', move);
-    window.removeEventListener('mouseup', up);
     pushHistory();
     renderTimeline();
     commitPlayback();
   };
-  window.addEventListener('mousemove', move);
-  window.addEventListener('mouseup', up);
+  follow(e, move, up);
 }
 
-function showContextMenu(x, y) {
+function showContextMenu(x, y, touch = false) {
   const menu = document.getElementById('context-menu');
+  menu.dataset.openedAt = String(Date.now());
   menu.classList.remove('hidden');
-  menu.style.left = `${Math.min(x, window.innerWidth - menu.offsetWidth - 8)}px`;
-  menu.style.top = `${Math.min(y, window.innerHeight - menu.offsetHeight - 8)}px`;
+  if (touch) {
+    // above the finger, so the finger doesn't hide it or tap an item by accident
+    const top = y - menu.offsetHeight - 18;
+    y = top >= 8 ? top : y + 28;
+    x -= menu.offsetWidth / 2;
+  }
+  menu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - menu.offsetWidth - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - menu.offsetHeight - 8))}px`;
 }
 
 export function renderTimeline() {
@@ -830,15 +848,15 @@ export function renderTimeline() {
     const top = document.createElement('div');
     top.className = 'flex items-center justify-between gap-2';
     const name = document.createElement('span');
-    name.className = 'font-bold text-slate-300 truncate';
+    name.className = 'track-name font-bold text-slate-300 truncate';
     name.textContent = track.name;
     const kind = document.createElement('span');
-    kind.className = `text-[9px] uppercase px-1 rounded ${track.type === 'video' ? 'bg-blue-950 text-blue-400' : 'bg-emerald-950 text-emerald-400'}`;
+    kind.className = `track-kind text-[9px] uppercase px-1 rounded ${track.type === 'video' ? 'bg-blue-950 text-blue-400' : 'bg-emerald-950 text-emerald-400'}`;
     kind.textContent = track.type;
     top.append(name, kind);
 
     const bottom = document.createElement('div');
-    bottom.className = 'flex items-center space-x-1';
+    bottom.className = 'track-buttons flex items-center space-x-1';
     const mute = document.createElement('button');
     mute.type = 'button';
     mute.className = `px-1.5 py-0.5 rounded text-[10px] ${track.muted ? 'bg-red-600 text-white' : 'bg-slate-700 text-slate-300'}`;
@@ -881,8 +899,22 @@ export function renderTimeline() {
       const rect = lane.getBoundingClientRect();
       place(asset, track, Math.max(0, (e.clientX - rect.left) / state.zoom));
     });
-    lane.addEventListener('mousedown', (e) => {
+    lane.addEventListener('pointerdown', (e) => {
       if (e.button !== 0 || e.target !== lane) return;
+      if (isTouch(e)) {
+        tapOrHold(e, {
+          onTap: (ev) => {
+            state.selectedClipId = null;
+            notify();
+            renderTimeline();
+            const rect = lane.getBoundingClientRect();
+            beginScrub();
+            scrubTo(Math.max(0, (ev.clientX - rect.left) / state.zoom));
+            endScrub();
+          },
+        });
+        return;
+      }
       state.selectedClipId = null;
       notify();
       const rect = lane.getBoundingClientRect();
@@ -891,12 +923,9 @@ export function renderTimeline() {
       at(e);
       const move = (ev) => at(ev);
       const up = () => {
-        window.removeEventListener('mousemove', move);
-        window.removeEventListener('mouseup', up);
         endScrub();
       };
-      window.addEventListener('mousemove', move);
-      window.addEventListener('mouseup', up);
+      follow(e, move, up);
     });
 
     for (const clip of state.clips) {
@@ -980,7 +1009,7 @@ export function bindTimeline() {
     const factor = delta > 0 ? 1 / 1.12 : 1.12;
     setZoom(state.zoom * factor);
   }, { passive: false });
-  document.getElementById('playhead-hit')?.addEventListener('mousedown', (e) => {
+  document.getElementById('playhead-hit')?.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
@@ -988,32 +1017,29 @@ export function bindTimeline() {
     scrubTo(timeFromRuler(e));
     const move = (ev) => scrubTo(timeFromRuler(ev));
     const up = () => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
       endScrub();
     };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
+    follow(e, move, up);
   });
-  ruler.addEventListener('mousedown', (e) => {
+  ruler.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
     e.preventDefault();
     beginScrub();
     scrubTo(timeFromRuler(e));
     const move = (ev) => scrubTo(timeFromRuler(ev));
     const up = () => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
       endScrub();
     };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
+    follow(e, move, up);
   });
   document.addEventListener('click', (e) => {
     const menu = document.getElementById('context-menu');
+    if (Date.now() - Number(menu?.dataset.openedAt || 0) < 450) return;
     if (menu && !menu.contains(e.target)) menu.classList.add('hidden');
   });
   scroller.addEventListener('scroll', hideTip);
+  let pinchZoom = state.zoom;
+  bindPinch(scroller, () => { pinchZoom = state.zoom; }, (scale) => setZoom(pinchZoom * scale));
 }
 
 function splitOne(clip, time) {

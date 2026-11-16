@@ -225,3 +225,104 @@
 .ai-gone { color: #64748b; text-decoration: line-through; }
 .ai-meta { color: #64748b; font-size: 11px; margin-bottom: 6px; }
 .ai-pick { background: rgba(16, 185, 129, 0.28); }
+
+/* ---------- phones and small screens ---------- */
+
+.mob-only { display: none !important; }
+.contents-desk { display: contents; }
+.clip-lifted { box-shadow: 0 0 0 2px #22d3ee, 0 10px 24px rgba(0, 0, 0, 0.6); }
+#timeline-scroll-container, #track-lanes { -webkit-touch-callout: none; }
+#timeline-ruler, #playhead-hit, #transform-box, [data-handle] { touch-action: none; }
+button, [role="button"], label { -webkit-tap-highlight-color: transparent; }
+
+/* bigger grab areas for fingers, on any screen with a touch pointer */
+@media (pointer: coarse) {
+  [data-handle="trim-left"], [data-handle="trim-right"] { width: 16px !important; }
+  [data-handle="fade-in"], [data-handle="fade-out"] { width: 18px !important; height: 18px !important; }
+  #playhead-hit { width: 36px !important; left: -18px !important; height: 28px !important; }
+  #transform-scale { width: 22px !important; height: 22px !important; right: -11px !important; bottom: -11px !important; }
+  .media-add { width: 30px !important; height: 30px !important; }
+}
+
+@media (max-width: 820px), (pointer: coarse) and (max-height: 520px) {
+  .desk-only { display: none !important; }
+  .mob-only { display: inline-flex !important; }
+  .contents-desk { display: none !important; }
+
+  body { height: 100dvh; touch-action: manipulation; }
+  header { height: 46px !important; padding-left: 10px !important; padding-right: 8px !important; padding-top: env(safe-area-inset-top); box-sizing: content-box; }
+  header button { min-width: 34px; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; }
+  header .w-px { display: none !important; }
+  header > div:last-child { gap: 0; }
+  header > div:last-child > * { margin-left: 0 !important; margin-right: 0 !important; }
+  header > div:first-child > div { font-size: 15px !important; gap: 4px; }
+  header > div:first-child > div > span:last-child { font-size: 9px !important; padding: 1px 4px !important; }
+  #btn-export { margin-left: 4px !important; padding: 7px 12px !important; }
+
+  /* one column: preview, then the timeline */
+  #main-area { display: flex !important; flex-direction: column; flex: 0 0 auto; padding: 0 !important; gap: 0 !important; overflow: visible !important; }
+  #panel-center { border-radius: 0 !important; border-width: 0 0 1px 0 !important; }
+  #panel-center > div:first-child { padding-top: 3px; padding-bottom: 3px; justify-content: flex-start; }
+  #preview-stage { flex: none !important; height: min(34dvh, 58vw); padding: 4px !important; }
+  #panel-center > div:last-child { height: 46px !important; padding: 0 8px !important; }
+  #timecode-display { font-size: 14px !important; padding: 2px 8px !important; }
+
+  #timeline-panel { height: auto !important; flex: 1 1 auto; min-height: 150px; }
+  #timeline-resize { display: none !important; }
+  #timeline-toolbar { height: 42px !important; padding: 0 8px !important; overflow-x: auto; gap: 8px; }
+  #timeline-toolbar > div { flex-shrink: 0; }
+  #timeline-toolbar button { min-height: 32px; }
+  #track-headers { width: 58px !important; }
+  #track-header-list .track-name, #track-header-list .track-kind { display: none; }
+  #track-header-list > div { padding: 4px !important; justify-content: center !important; }
+  #track-header-list .track-buttons { flex-wrap: wrap; gap: 4px; margin: 0 !important; }
+  #track-header-list .track-buttons > * { margin: 0 !important; min-width: 22px; min-height: 22px; }
+
+  /* side panels become sheets that slide up over the timeline */
+  #panel-left, #panel-right {
+    position: fixed; left: 0; right: 0; z-index: 46;
+    bottom: calc(58px + env(safe-area-inset-bottom));
+    height: min(66dvh, 600px);
+    border-radius: 16px 16px 0 0 !important;
+    border-width: 1px 0 0 0 !important;
+    box-shadow: 0 -14px 40px rgba(0, 0, 0, 0.55);
+    transform: translateY(105%);
+    visibility: hidden;
+    transition: transform 0.22s ease, visibility 0s linear 0.22s;
+  }
+  body.sheet-left #panel-left, body.sheet-right #panel-right {
+    transform: none; visibility: visible; transition: transform 0.22s ease;
+  }
+  .sheet-head { display: flex !important; align-items: center; justify-content: center; position: relative; height: 22px; flex-shrink: 0; }
+  .sheet-grab { width: 44px; height: 5px; border-radius: 3px; background: #475569; }
+  .sheet-close { position: absolute; right: 6px; top: 0; width: 36px; height: 30px; color: #94a3b8; font-size: 16px; }
+  #panel-left > div:nth-child(2) { overflow-x: auto; flex-shrink: 0; }
+  #panel-left > div:nth-child(2) button { padding: 10px 14px; white-space: nowrap; }
+  #panel-left, #panel-right { font-size: 13px; }
+  #media-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)) !important; }
+
+  /* the bottom bar */
+  #mobile-bar {
+    display: flex !important; justify-content: space-around; align-items: stretch;
+    height: calc(58px + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom);
+    background: #1a1e2b; border-top: 1px solid #2e354a; flex-shrink: 0; z-index: 47; position: relative;
+  }
+  #mobile-bar button {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    color: #94a3b8; font-size: 11px; position: relative;
+  }
+  #mobile-bar button i { font-size: 18px; }
+  #mobile-bar button.on { color: #22d3ee; }
+  #mobile-clip-dot { position: absolute; top: 9px; right: calc(50% - 16px); width: 8px; height: 8px; border-radius: 4px; background: #22d3ee; }
+
+  /* no zoom on focus in iOS: fields need 16 px text */
+  input, select, textarea { font-size: 16px !important; }
+  input[type="range"] { height: 28px; }
+  #inspector-content button, #tab-content-ai button, #tab-content-titles button { min-height: 38px; }
+
+  #toast-stack { left: 10px; right: 10px; top: calc(54px + env(safe-area-inset-top)); max-width: none; align-items: stretch; }
+  #context-menu { width: 230px !important; }
+  #context-menu button { padding-top: 12px !important; padding-bottom: 12px !important; font-size: 14px; }
+  #record-modal > div, #export-modal > div { max-height: calc(100dvh - 24px); overflow-y: auto; }
+  #record-modal { padding: 8px !important; }
+}
