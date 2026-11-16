@@ -21,7 +21,8 @@ export const state = {
   dirty: false,
   askedFirstClip: false,
   inPoint: null,
-  outPoint: null
+  outPoint: null,
+  cutPreview: null
 };
 
 export function uid(prefix) {

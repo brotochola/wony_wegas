@@ -26,6 +26,15 @@ Opening the file directly (`file://`) will not load the editor. The scripts are 
 
 Press `?` for the shortcut list.
 
+## Transcript and silences
+
+The **Transcript** tab works on the selected clip, or on the only video when nothing is selected, and on every other piece of that file on the same track.
+
+- **Remove silences.** Click **Find silences** to mark the pauses on the timeline. Use the slider to keep more or less air between phrases. **Apply cuts** cuts them and closes the gaps, and **Ctrl+Z** brings everything back in one step. A voice detector (Silero VAD, 2 MB) finds the pauses on this computer, so the cuts do not depend on the transcription.
+- **Transcribe.** Whisper base or small runs on this computer, with WebGPU when the browser has it and on the CPU otherwise. The model downloads once (77 to 320 MB). Groq runs Whisper large-v3 with a free API key, which you paste in **Options**. With Groq the audio is uploaded; with the other engines it stays here. Words the engine was unsure about are underlined. Click a word to jump there. Words that were cut are crossed out.
+
+Each file is analyzed once. The results are kept in the browser.
+
 ## Save
 
 The floppy-disk icon saves the edit on this computer. The download icon saves the same edit as a JSON file you can move. Neither one copies the media. When you open the project again, point it at the same files. In Chrome, a saved permission can reopen them without copying.

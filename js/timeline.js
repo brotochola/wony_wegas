@@ -915,6 +915,14 @@ export function renderTimeline() {
     lanes.appendChild(shade);
   }
 
+  for (const [a, b] of state.cutPreview?.regions || []) {
+    const cut = document.createElement('div');
+    cut.className = 'cut-preview';
+    cut.style.left = `${a * state.zoom}px`;
+    cut.style.width = `${Math.max(1, (b - a) * state.zoom)}px`;
+    lanes.appendChild(cut);
+  }
+
   const height = (ruler?.offsetHeight || 24) + lanes.offsetHeight;
   if (playhead) {
     playhead.style.left = `${state.currentTime * state.zoom}px`;

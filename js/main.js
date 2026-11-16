@@ -11,6 +11,7 @@ import {
   initPreview, resizePreview, setSpanListener, togglePlay, seekToStart, seekToEnd, seek, stopPlaying, previewNow, measureFps, syncTransformBox
 } from './playback.js';
 import { openExportModal, closeExportModal, applyExportPreset, checkCodecSupport, startExport, cancelExport } from './export.js';
+import { initAi } from './ai.js';
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -554,17 +555,15 @@ function applyInspector(commit) {
   }
 }
 
+const TABS = ['media', 'titles', 'ai'];
+
 function switchTab(tab) {
-  document.getElementById('tab-content-media').classList.toggle('hidden', tab !== 'media');
-  document.getElementById('tab-content-titles').classList.toggle('hidden', tab !== 'titles');
-  const mediaBtn = document.getElementById('tab-btn-media');
-  const titleBtn = document.getElementById('tab-btn-titles');
-  mediaBtn.className = tab === 'media'
-    ? 'px-3 py-2 border-b-2 border-cyan-400 text-cyan-400 font-bold'
-    : 'px-3 py-2 text-slate-400 hover:text-white';
-  titleBtn.className = tab === 'titles'
-    ? 'px-3 py-2 border-b-2 border-cyan-400 text-cyan-400 font-bold'
-    : 'px-3 py-2 text-slate-400 hover:text-white';
+  for (const name of TABS) {
+    document.getElementById(`tab-content-${name}`).classList.toggle('hidden', tab !== name);
+    document.getElementById(`tab-btn-${name}`).className = tab === name
+      ? 'px-3 py-2 border-b-2 border-cyan-400 text-cyan-400 font-bold'
+      : 'px-3 py-2 text-slate-400 hover:text-white';
+  }
 }
 
 function bindUi() {
@@ -638,6 +637,7 @@ function bindUi() {
   document.addEventListener('project-dirty', scheduleAutosave);
   document.getElementById('tab-btn-media').addEventListener('click', () => switchTab('media'));
   document.getElementById('tab-btn-titles').addEventListener('click', () => switchTab('titles'));
+  document.getElementById('tab-btn-ai').addEventListener('click', () => switchTab('ai'));
   document.getElementById('btn-add-text').addEventListener('click', addTextClip);
   document.getElementById('btn-play').addEventListener('click', togglePlay);
   document.getElementById('btn-seek-start').addEventListener('click', seekToStart);
@@ -871,6 +871,7 @@ function boot() {
   bindTimeline();
   bindTimelineResize();
   bindUi();
+  initAi();
   renderMediaPool();
   pushHistory();
   renderTimeline();

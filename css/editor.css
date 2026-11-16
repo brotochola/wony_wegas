@@ -208,3 +208,19 @@
   width: 160px;
   height: 90px;
 }
+
+.cut-preview {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 25;
+  pointer-events: none;
+  background: repeating-linear-gradient(135deg, rgba(248, 113, 113, 0.32) 0 6px, rgba(248, 113, 113, 0.14) 6px 12px);
+  box-shadow: inset 1px 0 0 rgba(248, 113, 113, 0.8), inset -1px 0 0 rgba(248, 113, 113, 0.8);
+}
+
+.ai-word { cursor: pointer; border-radius: 3px; padding: 0 1px; }
+.ai-word:hover { background: #24324a; }
+.ai-doubt { text-decoration: underline wavy #f59e0b; text-underline-offset: 3px; }
+.ai-gone { color: #64748b; text-decoration: line-through; }
+.ai-meta { color: #64748b; font-size: 11px; margin-bottom: 6px; }
