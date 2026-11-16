@@ -26,6 +26,10 @@ Opening the file directly (`file://`) will not load the editor. The scripts are 
 
 Press `?` for the shortcut list.
 
+## Record
+
+**Record** in Project Media films you with the webcam, records the microphone alone, or both. Pick the camera and the microphone, watch the preview and the level, and press **Start recording**. When you stop, the take goes into Project Media and, if you leave the box checked, at the end of the timeline. In Chrome it is also saved as a file, so a saved project can open it again.
+
 ## Transcript and silences
 
 The **Transcript** tab works on the selected clip, or on the only video when nothing is selected, and on every other piece of that file on the same track.

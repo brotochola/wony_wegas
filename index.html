@@ -88,9 +88,13 @@
         <button type="button" id="tab-btn-ai" class="px-3 py-2 text-slate-400 hover:text-white">Transcript</button>
       </div>
       <div id="tab-content-media" class="flex-1 flex flex-col p-2 overflow-hidden">
-        <div class="flex items-center justify-between gap-2 mb-2 flex-wrap">
-          <span class="text-xs text-slate-400">Files loaded (<span id="media-count">0</span>)</span>
-          <button type="button" id="btn-unused" title="Remove files that are not on the timeline" class="text-slate-400 hover:text-red-300">Remove unused</button>
+        <div class="flex items-center justify-between gap-1.5 mb-2 flex-wrap">
+          <span class="text-xs text-slate-400">Files (<span id="media-count">0</span>)</span>
+          <button type="button" id="btn-unused" title="Remove files that are not on the timeline" class="text-xs text-slate-400 hover:text-red-300">Remove unused</button>
+          <button type="button" id="btn-record" title="Record from the webcam, the microphone, or both" class="bg-vegas-panelLight hover:bg-vegas-border border border-slate-700 text-xs text-slate-200 px-2.5 py-1 rounded flex items-center gap-1">
+            <i class="fa-solid fa-circle text-red-500 text-[9px]"></i>
+            <span>Record</span>
+          </button>
           <label title="Import video, audio, or image" class="bg-vegas-panelLight hover:bg-vegas-border border border-slate-700 text-xs text-slate-200 px-2.5 py-1 rounded cursor-pointer flex items-center gap-1">
             <i class="fa-solid fa-plus text-cyan-400"></i>
             <span>Add File</span>
@@ -606,6 +610,51 @@
         <label class="text-slate-300 block" for="opt-groq-key">Groq API key (for the Transcript tab)</label>
         <input type="password" id="opt-groq-key" autocomplete="off" spellcheck="false" placeholder="gsk_…" class="w-full bg-vegas-bg border border-vegas-border rounded px-2 py-1.5 text-slate-100 font-mono">
         <p class="text-slate-500">Free at <a href="https://console.groq.com/keys" target="_blank" rel="noopener" class="text-cyan-400 hover:underline">console.groq.com/keys</a>. Saved only in this browser. With Groq the audio is uploaded; the on-this-computer engines keep it here.</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="record-modal" class="fixed inset-0 bg-slate-950/80 z-50 hidden items-center justify-center p-4">
+    <div class="bg-vegas-panel border border-vegas-border w-full max-w-2xl rounded-lg shadow-2xl overflow-hidden flex flex-col text-xs">
+      <div class="h-10 bg-vegas-panelLight border-b border-vegas-border flex items-center justify-between px-4 font-bold text-sm text-cyan-400">
+        <span class="flex items-center gap-2"><i id="rec-dot" class="fa-solid fa-circle text-red-500 text-[10px] opacity-30"></i> Record</span>
+        <button type="button" id="rec-close" class="text-slate-400 hover:text-white" title="Close"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="p-4 space-y-3">
+        <div class="flex gap-2">
+          <button type="button" data-rec-mode="both"><i class="fa-solid fa-video mr-1"></i> Camera + mic</button>
+          <button type="button" data-rec-mode="mic"><i class="fa-solid fa-microphone mr-1"></i> Mic only</button>
+          <button type="button" data-rec-mode="cam"><i class="fa-solid fa-video-slash mr-1"></i> Camera only</button>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <label id="rec-camera-wrap" class="text-slate-400 flex flex-col gap-1">Camera
+            <select id="rec-camera" class="bg-vegas-bg border border-vegas-border rounded px-2 py-1.5 text-slate-100"></select>
+          </label>
+          <label id="rec-mic-wrap" class="text-slate-400 flex flex-col gap-1">Microphone
+            <select id="rec-mic" class="bg-vegas-bg border border-vegas-border rounded px-2 py-1.5 text-slate-100"></select>
+          </label>
+        </div>
+        <div class="relative bg-black rounded border border-slate-800 aspect-video flex items-center justify-center overflow-hidden">
+          <video id="rec-preview" muted playsinline class="w-full h-full object-contain -scale-x-100"></video>
+          <div id="rec-mic-only" class="hidden flex flex-col items-center gap-2 text-slate-500">
+            <i class="fa-solid fa-microphone text-5xl"></i>
+            <span>Audio only</span>
+          </div>
+          <div class="absolute top-2 left-2 font-mono text-sm bg-black/60 text-white px-2 py-0.5 rounded" id="rec-time">00:00</div>
+        </div>
+        <div id="rec-level-wrap" class="flex items-center gap-2 text-slate-400">
+          <i class="fa-solid fa-volume-high"></i>
+          <div class="flex-1 h-2 bg-vegas-bg border border-vegas-border rounded overflow-hidden"><div id="rec-level" class="h-full bg-emerald-500 w-0"></div></div>
+        </div>
+        <p id="rec-status" class="text-slate-400 min-h-[1rem]"></p>
+        <div class="flex flex-wrap gap-x-4 gap-y-1 text-slate-300">
+          <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" id="rec-to-timeline" class="accent-cyan-400" checked> Put it at the end of the timeline</label>
+          <label id="rec-save-wrap" class="flex items-center gap-1.5 cursor-pointer" title="Saved projects can only reopen media that exists as a file"><input type="checkbox" id="rec-save-file" class="accent-cyan-400" checked> Save it as a file when it stops</label>
+        </div>
+      </div>
+      <div class="h-12 bg-vegas-panelLight border-t border-vegas-border flex items-center justify-end px-4 gap-2">
+        <button type="button" id="rec-start" disabled class="bg-red-600 hover:bg-red-500 text-white font-bold px-4 py-1.5 rounded flex items-center gap-1.5 disabled:opacity-40"><i class="fa-solid fa-circle text-[9px]"></i> Start recording</button>
+        <button type="button" id="rec-stop" class="hidden bg-slate-100 hover:bg-white text-slate-950 font-bold px-4 py-1.5 rounded flex items-center gap-1.5"><i class="fa-solid fa-stop"></i> Stop</button>
       </div>
     </div>
   </div>

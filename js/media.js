@@ -56,6 +56,28 @@ function waitMedia(el, event, ms) {
   });
 }
 
+// MediaRecorder files (webm, fragmented mp4) often have no duration in their header, so the
+// browser reports Infinity. Seeking far past the end makes it read the whole file and settle.
+async function settleDuration(el) {
+  if (isFinite(el.duration) && el.duration > 0) return;
+  await new Promise((resolve) => {
+    const timer = setTimeout(done, 8000);
+    function done() {
+      clearTimeout(timer);
+      el.removeEventListener('durationchange', check);
+      el.removeEventListener('timeupdate', check);
+      resolve();
+    }
+    function check() {
+      if (isFinite(el.duration) && el.duration > 0) done();
+    }
+    el.addEventListener('durationchange', check);
+    el.addEventListener('timeupdate', check);
+    el.currentTime = 1e7;
+  });
+  el.currentTime = 0;
+}
+
 function codecMessage(name) {
   return `Can't play "${name}". This browser doesn't support that codec.`;
 }
@@ -145,10 +167,11 @@ async function mountAsset(source) {
       asset.element = video;
       park(video);
       await waitMedia(video, 'loadedmetadata', 20000);
+      await settleDuration(video);
       if (video.readyState < 2) {
         try { await waitMedia(video, 'loadeddata', 4000); } catch { /* frame may still arrive on seek */ }
       }
-      asset.duration = video.duration || 0;
+      asset.duration = isFinite(video.duration) ? video.duration : 0;
       asset.width = video.videoWidth || 0;
       asset.height = video.videoHeight || 0;
       if (!asset.duration) throw new Error(video.error ? codecMessage(name) : 'duration');
@@ -165,7 +188,8 @@ async function mountAsset(source) {
       audio.preload = 'auto';
       audio.src = url;
       await waitMedia(audio, 'loadedmetadata', 20000);
-      asset.duration = audio.duration || 0;
+      await settleDuration(audio);
+      asset.duration = isFinite(audio.duration) ? audio.duration : 0;
       audio.removeAttribute('src');
       audio.load();
       if (!asset.duration) throw new Error('duration');

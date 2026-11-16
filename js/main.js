@@ -12,6 +12,7 @@ import {
 } from './playback.js';
 import { openExportModal, closeExportModal, applyExportPreset, checkCodecSupport, startExport, cancelExport } from './export.js';
 import { initAi } from './ai.js';
+import { initRecorder } from './record.js';
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -741,7 +742,7 @@ function bracketEdge(e) {
 
 function onKeyDown(e) {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
-  if (['help-modal', 'options-modal', 'export-modal', 'library-modal', 'ask-modal'].some(id => !document.getElementById(id)?.classList.contains('hidden'))) return;
+  if (['help-modal', 'options-modal', 'export-modal', 'library-modal', 'ask-modal', 'record-modal'].some(id => !document.getElementById(id)?.classList.contains('hidden'))) return;
   if (e.repeat && !e.key.startsWith('Arrow')) return;
   const cmd = e.ctrlKey || e.metaKey;
   const key = letter(e);
@@ -872,6 +873,7 @@ function boot() {
   bindTimelineResize();
   bindUi();
   initAi();
+  initRecorder();
   renderMediaPool();
   pushHistory();
   renderTimeline();
