@@ -1,6 +1,6 @@
 // Chrome's built-in AI on top of the transcript:
-//   - highlights: the Summarizer writes the key points; Gemini Nano (Prompt API) picks the sentences
-//     to keep, or, without it, the sentences that best cover the Summarizer's key points are chosen
+//   - highlights: the Summarizer writes the key points, and the sentences that say each point best
+//     are kept (the Summarizer returns text, not times, so the points are matched back to sentences)
 //   - translation: whole sentences go to the Translator, and the translated words are spread over
 //     the time the original sentence was spoken (skipping its pauses)
 // Everything runs on this computer. Sessions must be created from a click (the models may download).
@@ -10,7 +10,6 @@ const SUMMARY_LANGS = ['en', 'es', 'ja', 'de', 'fr'];
 export function aiSupport() {
   return {
     summarizer: 'Summarizer' in self,
-    prompt: 'LanguageModel' in self,
     translator: 'Translator' in self,
     detector: 'LanguageDetector' in self,
   };
@@ -100,7 +99,7 @@ function terms(text) {
     .filter(t => t.length > 2 && !STOP.has(t)).map(t => t.slice(0, 5));
 }
 
-// Without the Prompt API: for each key point, the sentence that says it best.
+// For each key point, the sentence that says it best; then the rest, closest to any point first.
 function rankByKeyPoints(sentences, summary) {
   const docs = sentences.map(s => terms(s.text));
   const df = new Map();
@@ -135,57 +134,6 @@ function rankByKeyPoints(sentences, summary) {
   return [...ranked, ...rest];
 }
 
-const HIGHLIGHT_SCHEMA = {
-  type: 'object',
-  properties: {
-    title: { type: 'string' },
-    ids: { type: 'array', items: { type: 'integer' } },
-  },
-  required: ['title', 'ids'],
-};
-
-async function rankWithNano(sentences, seconds, lang, onProgress) {
-  const langs = ['en', 'es', 'ja'].includes(lang) ? [lang] : ['en'];
-  const options = {
-    expectedInputs: [{ type: 'text', languages: langs }],
-    expectedOutputs: [{ type: 'text', languages: langs }],
-  };
-  if (await LanguageModel.availability(options) === 'unavailable') return null;
-  const base = await LanguageModel.create({
-    ...options,
-    initialPrompts: [{ role: 'system', content: 'You choose the best moments of a video from its transcript to cut a short highlight. Answer only with JSON.' }],
-    monitor: monitorFor('Gemini Nano', onProgress),
-  });
-  const render = (list, target) => [
-    'Transcript of a video, one sentence per line: [id] (seconds) text',
-    ...list.map(s => `[${s.id}] (${(s.e - s.s).toFixed(1)}) ${s.text}`),
-    '',
-    `Choose sentences for a highlight of about ${Math.round(target)} seconds that keeps the main ideas and makes sense on its own.`,
-    'Prefer complete thoughts, strong or surprising statements and the conclusion. Skip greetings, filler and repeated ideas.',
-    'Return "ids" ordered from most to least important (listing more than needed is fine) and a short "title" in the language of the transcript.',
-  ].join('\n');
-  const total = sentences.reduce((n, s) => n + s.e - s.s, 0);
-  const chunks = await chunksFor(base, sentences, (list) => render(list, seconds));
-  const rankings = [];
-  let title = '';
-  for (let i = 0; i < chunks.length; i++) {
-    onProgress?.(i / chunks.length, `Gemini Nano is choosing (${i + 1}/${chunks.length})`);
-    const share = seconds * chunks[i].reduce((n, s) => n + s.e - s.s, 0) / total;
-    const session = chunks.length > 1 && base.clone ? await base.clone() : base;
-    const raw = await session.prompt(render(chunks[i], share), { responseConstraint: HIGHLIGHT_SCHEMA });
-    const data = JSON.parse(raw);
-    const valid = new Set(chunks[i].map(s => s.id));
-    rankings.push([...new Set((data.ids || []).filter(id => valid.has(id)))]);
-    title ||= data.title || '';
-    if (session !== base) session.destroy?.();
-  }
-  base.destroy?.();
-  // interleave the chunks' rankings so every part of a long video gets its turn
-  const ranked = [];
-  for (let r = 0; rankings.some(list => r < list.length); r++) for (const list of rankings) if (r < list.length) ranked.push(list[r]);
-  return { ranked, title };
-}
-
 // Most important first until the target length, then back in the order they were said.
 export function pickRanges(sentences, ranked, seconds) {
   const chosen = [];
@@ -211,25 +159,16 @@ export function pickRanges(sentences, ranked, seconds) {
   return { ranges, ids: chosen.map(s => s.id), total };
 }
 
-// Starts the models right away (inside the click), then does the work.
+// Starts the summarizer right away (inside the click: the model may need to download), then does the work.
 export async function findHighlights(words, seconds, lang, onProgress) {
   const sentences = sentencesFrom(words);
   if (!sentences.length) throw new Error('The transcript is empty');
-  const summarizerP = makeSummarizer(lang, onProgress).catch((err) => { console.warn(err); return null; });
-  const useNano = 'LanguageModel' in self;
-  const nanoP = useNano ? rankWithNano(sentences, seconds, lang, onProgress).catch((err) => { console.warn(err); return null; }) : Promise.resolve(null);
-  const summarizer = await summarizerP;
-  let summary = '';
-  if (summarizer) {
-    summary = await summarize(summarizer, sentences, onProgress);
-    summarizer.destroy?.();
-  }
-  const nano = await nanoP;
-  let ranked, method;
-  if (nano?.ranked.length) { ranked = nano.ranked; method = 'Gemini Nano'; } else if (summary) { ranked = rankByKeyPoints(sentences, summary); method = 'Summarizer key points'; } else {
-    throw new Error("Chrome's built-in AI is not available in this browser (Summarizer and Prompt API).");
-  }
-  return { ...pickRanges(sentences, ranked, seconds), summary, title: nano?.title || '', method, sentences };
+  const summarizer = await makeSummarizer(lang, onProgress);
+  if (!summarizer) throw new Error("Chrome's Summarizer is not available in this browser.");
+  const summary = await summarize(summarizer, sentences, onProgress);
+  summarizer.destroy?.();
+  const ranked = rankByKeyPoints(sentences, summary);
+  return { ...pickRanges(sentences, ranked, seconds), summary, title: '', method: 'the Summarizer key points', sentences };
 }
 
 // ---------- translation ----------

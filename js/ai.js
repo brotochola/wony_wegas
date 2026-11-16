@@ -607,10 +607,10 @@ function syncButtons() {
   $('ai-apply-cuts').disabled = busy || !has || !state.cutPreview?.regions?.length;
   $('ai-add-captions').disabled = busy || !has || !shownKey;
   const ai = aiSupport();
-  $('ai-find-hl').disabled = busy || !has || !shownKey || !(ai.summarizer || ai.prompt);
+  $('ai-find-hl').disabled = busy || !has || !shownKey || !ai.summarizer;
   $('ai-keep-hl').disabled = busy || !has || !(previewOn && previewMode === 'highlights' && state.cutPreview?.regions?.length);
   $('ai-translate').disabled = busy || !has || !shownKey || !ai.translator;
-  $('ai-chrome-note').classList.toggle('hidden', ai.summarizer || ai.prompt || ai.translator);
+  $('ai-chrome-note').classList.toggle('hidden', ai.summarizer || ai.translator);
   $('ai-target').textContent = has
     ? `${t.asset.name} · ${t.units.length > 1 ? `${t.units.length} pieces · ` : ''}${formatDuration(t.total)}${t.units[0].group.length > 1 ? ' · video + audio' : ''}`
     : 'Select a video or audio clip.';
